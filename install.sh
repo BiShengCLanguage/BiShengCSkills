@@ -150,7 +150,70 @@ install_claude() {
         count=$((count + 1))
     done
 
+    # Install auto-fix hook script
+    local hooks_dir="$TARGET/.claude/hooks"
+    mkdir -p "$hooks_dir"
+    cp "$SCRIPT_DIR/hooks/bsc-fix-qualifiers.sh" "$hooks_dir/bsc-fix-qualifiers.sh"
+    chmod +x "$hooks_dir/bsc-fix-qualifiers.sh"
+
+    # Add hook to settings.local.json
+    local settings="$TARGET/.claude/settings.local.json"
+    if [ -f "$settings" ]; then
+        # Merge hook into existing settings using jq if available, else python
+        if command -v jq &>/dev/null; then
+            local tmp=$(mktemp)
+            jq --arg hook "$hooks_dir/bsc-fix-qualifiers.sh" '
+              .hooks.PostToolUse = (.hooks.PostToolUse // []) +
+              [{"matcher": "Write|Edit", "hooks": [{"type": "command", "command": ("bash " + $hook)}]}]
+            ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+        else
+            python3 -c "
+import json, sys
+s = json.load(open('$settings'))
+s.setdefault('hooks', {}).setdefault('PostToolUse', []).append({
+    'matcher': 'Write|Edit',
+    'hooks': [{'type': 'command', 'command': 'bash $hooks_dir/bsc-fix-qualifiers.sh'}]
+})
+json.dump(s, open('$settings', 'w'), indent=2)
+"
+        fi
+    else
+        cat > "$settings" << SETTINGS_EOF
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Write|Edit",
+      "hooks": [{
+        "type": "command",
+        "command": "bash $hooks_dir/bsc-fix-qualifiers.sh"
+      }]
+    }]
+  }
+}
+SETTINGS_EOF
+    fi
+
+    # Install CLAUDE.md with syntax rules (always-loaded context)
+    local claude_md="$TARGET/CLAUDE.md"
+    if [ ! -f "$claude_md" ] || ! grep -q "BiSheng C" "$claude_md" 2>/dev/null; then
+        cat >> "$claude_md" << 'CLAUDE_EOF'
+
+# BiSheng C (BSC) — Pointer Qualifier Rules
+
+`_Owned` and `_Borrow` go AFTER the `*`, never before the type:
+- ✅ `char *_Owned p = (char *_Owned)malloc(n);`
+- ✅ `const int *_Borrow r = &_Const x;`
+- ❌ `_Owned char* p` — WRONG
+- ❌ `_Borrow int* r` — WRONG
+
+`malloc()` must be cast: `(T *_Owned)malloc(n)`. `free()` must cast: `free((void *_Owned)p)`.
+BSC files: `.cbs` (source), `.hbs` (header). Compile: `clang file.cbs -o output`.
+CLAUDE_EOF
+    fi
+
     echo "  Claude Code: installed $count commands to .claude/commands/"
+    echo "  Claude Code: installed auto-fix hook to .claude/hooks/"
+    echo "  Claude Code: added BSC syntax rules to CLAUDE.md"
     echo "    Usage: /bsc-overview, /bsc-trait, /bsc-ownership, etc."
 }
 
@@ -212,7 +275,8 @@ if [ "$ACTION" = "uninstall" ]; then
             name="$(basename "$skill_dir")"
             rm -f "$TARGET/.claude/commands/$name.md"
         done
-        echo "  Removed Claude Code commands"
+        rm -f "$TARGET/.claude/hooks/bsc-fix-qualifiers.sh"
+        echo "  Removed Claude Code commands and hooks"
     fi
 
     # OpenCode

@@ -87,6 +87,28 @@ Skills auto-trigger based on their description field. When you ask about ownersh
 | `bsc-errors` | `BSC-Exxxx`, error codes | Error code reference, diagnostic hierarchy |
 | `bsc-common-mistakes` | compilation errors, pitfalls | Common mistakes with wrong/right examples |
 
+## Auto-Fix Hook (Claude Code)
+
+LLMs sometimes put `_Owned`/`_Borrow` before the type instead of after the `*`. The included hook auto-fixes this via sed whenever Claude writes a `.cbs` file.
+
+Add to your `~/.claude/settings.json` or `.claude/settings.local.json`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Write|Edit",
+      "hooks": [{
+        "type": "command",
+        "command": "bash /tmp/BiShengCSkills/hooks/bsc-fix-qualifiers.sh"
+      }]
+    }]
+  }
+}
+```
+
+Or if you cloned the repo elsewhere, adjust the path accordingly.
+
 ## Error Reference
 
 The `errors/` directory contains comprehensive documentation for all BSC compiler diagnostics:
@@ -102,6 +124,8 @@ The `errors/` directory contains comprehensive documentation for all BSC compile
 BiShengCSkills/
 ├── install.sh                          ← one-command installer
 ├── README.md
+├── hooks/
+│   └── bsc-fix-qualifiers.sh          ← auto-fix _Owned/_Borrow placement
 ├── skills/
 │   ├── bsc-overview/SKILL.md
 │   ├── member-function/SKILL.md
