@@ -13,6 +13,16 @@ BiSheng C (BSC) is a **superset of C** with Rust-inspired memory safety, traits,
 - Header files: `.hbs`
 - Compiler: clang fork — `clang file.cbs -o output`
 
+## ⚠️ CRITICAL Syntax Rule
+
+`_Owned` and `_Borrow` are **pointer qualifiers** — they go **after the `*`**, never before the type:
+- ✅ `char *_Owned p = (char *_Owned)malloc(n);`
+- ✅ `const int *_Borrow r = &_Const x;`
+- ❌ `_Owned char* p = malloc(n);` — WRONG, does not compile
+- ❌ `_Borrow int* r = ...;` — WRONG, does not compile
+
+`malloc()` returns raw `void*` and MUST be cast: `(T *_Owned)malloc(...)`.
+
 ## 2. Feature Overview
 
 | Feature | Keywords | Description |

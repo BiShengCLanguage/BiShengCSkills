@@ -5,6 +5,19 @@ description: "BiSheng C borrowing. When you need to understand _Borrow pointers,
 
 # BiSheng C Borrowing Skill
 
+## ⚠️ CRITICAL: `_Borrow` Syntax
+
+**`_Borrow` goes AFTER the `*`, not before the type.** It is a pointer qualifier.
+
+```c
+// ✅ CORRECT
+const int *_Borrow r = &_Const x;
+int *_Borrow mr = &_Mut x;
+
+// ❌ WRONG (does not compile)
+_Borrow int* r = &_Const x;
+```
+
 ## 1. Overview
 
 Temporary, non-owning references. The compiler enforces borrow rules at compile time — no dangling references, no aliased mutation.

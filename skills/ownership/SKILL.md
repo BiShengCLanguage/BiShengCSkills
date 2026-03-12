@@ -5,6 +5,24 @@ description: "BiSheng C ownership system. When you need to understand _Owned poi
 
 # BiSheng C Ownership Skill
 
+## ⚠️ CRITICAL: `_Owned` Syntax
+
+**`_Owned` goes AFTER the `*`, not before the type.** It is a pointer qualifier, like `const`.
+
+```c
+// ✅ CORRECT — _Owned after *
+char *_Owned msg = (char *_Owned)malloc(14);
+int *_Owned p = (int *_Owned)malloc(sizeof(int));
+
+// ❌ WRONG — _Owned before type (THIS DOES NOT COMPILE)
+_Owned char* msg = malloc(14);
+_Owned int* p = malloc(sizeof(int));
+```
+
+**Also:** `malloc()` returns raw `void*` — you MUST cast to `T *_Owned`: `(char *_Owned)malloc(n)`.
+
+Same rule applies to `_Borrow`: write `int *_Borrow`, not `_Borrow int*`.
+
 ## 1. Overview
 
 Move semantics for compile-time memory safety. Prevents use-after-free and double-free at compile time. Once ownership transfers, the original variable is dead.
