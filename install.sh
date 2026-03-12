@@ -24,6 +24,7 @@
 #   windsurf  — Windsurf IDE (.windsurfrules)
 #   opencode  — OpenCode (.opencode/skills/)
 #   copilot   — GitHub Copilot (.github/copilot-instructions.md)
+#   codex     — OpenAI Codex CLI (AGENTS.md)
 
 set -euo pipefail
 
@@ -75,7 +76,7 @@ TARGET="$(cd "$TARGET" && pwd)"
 if [ "$ACTION" = "help" ]; then
     echo "Usage: install.sh [-a adapter] [--uninstall] [--list] [project_dir]"
     echo ""
-    echo "Adapters: claude, cursor, windsurf, opencode, copilot, all"
+    echo "Adapters: claude, cursor, windsurf, opencode, copilot, codex, all"
     echo ""
     echo "Examples:"
     echo "  bash install.sh                    # auto-detect tools, install to current dir"
@@ -194,6 +195,13 @@ install_copilot() {
     echo "  Copilot: wrote .github/copilot-instructions.md"
 }
 
+# --- Install: Codex ---
+install_codex() {
+    local dst="$TARGET/AGENTS.md"
+    concat_all_skills > "$dst"
+    echo "  Codex: wrote AGENTS.md ($(wc -l < "$dst") lines)"
+}
+
 # --- Uninstall ---
 if [ "$ACTION" = "uninstall" ]; then
     echo "Removing BiSheng C Skills from $TARGET..."
@@ -217,7 +225,7 @@ if [ "$ACTION" = "uninstall" ]; then
     fi
 
     # Single-file tools — only remove if it's ours
-    for f in .cursorrules .windsurfrules .github/copilot-instructions.md; do
+    for f in .cursorrules .windsurfrules .github/copilot-instructions.md AGENTS.md; do
         if [ -f "$TARGET/$f" ] && head -1 "$TARGET/$f" | grep -q "BiSheng C"; then
             rm -f "$TARGET/$f"
             echo "  Removed $f"
@@ -238,16 +246,18 @@ case "$ADAPTER" in
     windsurf)  install_windsurf ;;
     opencode)  install_opencode ;;
     copilot)   install_copilot ;;
+    codex)     install_codex ;;
     all)
         install_claude
         install_cursor
         install_windsurf
         install_opencode
         install_copilot
+        install_codex
         ;;
     *)
         echo "Unknown adapter: $ADAPTER" >&2
-        echo "Supported: claude, cursor, windsurf, opencode, copilot, all" >&2
+        echo "Supported: claude, cursor, windsurf, opencode, copilot, codex, all" >&2
         exit 1
         ;;
 esac

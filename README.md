@@ -11,13 +11,14 @@ These Skills enable AI coding tools to generate syntactically and semantically c
 **One-liner** — no manual clone needed:
 
 ```bash
-# Install for all tools (Claude, Cursor, Windsurf, OpenCode, Copilot)
+# Install for all tools (Claude, Cursor, Windsurf, OpenCode, Copilot, Codex)
 curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash
 
 # Install for a specific tool only
 curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a claude
 curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a cursor
 curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a opencode
+curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a codex
 ```
 
 ### If you prefer to clone first
@@ -30,6 +31,7 @@ bash install.sh -a cursor    # Cursor IDE
 bash install.sh -a windsurf  # Windsurf IDE
 bash install.sh -a opencode  # OpenCode
 bash install.sh -a copilot   # GitHub Copilot
+bash install.sh -a codex     # OpenAI Codex CLI
 bash install.sh -a all       # All of the above
 ```
 
@@ -42,6 +44,7 @@ bash install.sh -a all       # All of the above
 | **Windsurf** | `.windsurfrules` | All skills concatenated into single rules file |
 | **OpenCode** | `.opencode/skills/<skill>/SKILL.md` | One skill per directory (native format) |
 | **Copilot** | `.github/copilot-instructions.md` | All skills concatenated into instructions file |
+| **Codex** | `AGENTS.md` | All skills concatenated into single AGENTS file |
 
 ### Uninstall
 
@@ -60,7 +63,7 @@ bash install.sh --uninstall /path/to/your/project
 > /bsc-common-mistakes Fix my code that uses & in a _Safe zone
 ```
 
-### Cursor / Windsurf / Copilot
+### Cursor / Windsurf / Copilot / Codex
 
 Skills are automatically loaded as project context. Just write BSC code — the AI will reference the rules.
 
