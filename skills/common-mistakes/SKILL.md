@@ -55,7 +55,25 @@ _Safe void f(int *_Borrow p) { *p = 1; }
 
 ## 2. Ownership Mistakes
 
-### 2.1 Using variable after ownership transfer
+### 2.1 Wrong `_Owned`/`_Borrow` qualifier placement
+
+**This is the #1 mistake LLMs make.** `_Owned` and `_Borrow` are **pointer qualifiers** — they go **after the `*`**, not before the type. Think of it like `const`: you write `int *const`, not `const int*` (for pointer-level const).
+
+```c
+// ❌ Wrong — _Owned is NOT a type prefix
+_Owned char* msg = malloc(14);
+_Owned int* p = malloc(sizeof(int));
+_Borrow int* r = &_Const x;
+
+// ✅ Correct — _Owned/_Borrow qualifies the pointer, goes after *
+char *_Owned msg = (char *_Owned)malloc(14);
+int *_Owned p = (int *_Owned)malloc(sizeof(int));
+const int *_Borrow r = &_Const x;
+```
+
+The pattern is always `T *_Owned` and `T *_Borrow`, never `_Owned T*` or `_Borrow T*`.
+
+### 2.2 Using variable after ownership transfer
 
 ```c
 // ❌ Wrong
@@ -190,6 +208,8 @@ task->free();
 
 | Mistake | Fix |
 |---------|-----|
+| `_Owned char*` | `char *_Owned` — qualifier goes after `*` |
+| `_Borrow int*` | `int *_Borrow` — qualifier goes after `*` |
 | `&` in `_Safe` | Use `&_Const` or `&_Mut` |
 | `++i` in `_Safe` | Use `i += 1` |
 | `_Safe int f()` | `_Safe int f(void)` |

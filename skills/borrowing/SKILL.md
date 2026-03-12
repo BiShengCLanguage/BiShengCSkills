@@ -26,6 +26,7 @@ int *_Borrow mr = &_Mut x;           // mutable borrow — read/write
 
 ## 4. Rules
 
+- **`_Borrow` goes after the `*`**: write `int *_Borrow`, NOT `_Borrow int*`. It is a pointer qualifier, not a type prefix
 - While **immutable borrow** active: original is read-only, no mutable borrows allowed
 - While **mutable borrow** active: original is **frozen** — no reads, writes, or borrows
 - Borrow lifetime < borrowed value's lifetime (compiler enforced)

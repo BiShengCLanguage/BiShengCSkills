@@ -42,9 +42,9 @@ BiSheng C (BSC) is a **superset of C** with Rust-inspired memory safety, traits,
 | Trait definition | `_Trait Name { RetType method(This* this); };` |
 | Trait impl | `_Impl _Trait Name for TypeName;` |
 | Trait pointer | `_Trait Name* ptr = &value;` |
-| Owned pointer | `T *_Owned` |
+| Owned pointer | `T *_Owned` (**not** `_Owned T*` — qualifier goes after `*`) |
 | Owned struct | `_Owned struct S { _Public: ...; ~S(S this) {...} };` |
-| Immutable borrow | `const T *_Borrow ref = &_Const value;` |
+| Immutable borrow | `const T *_Borrow ref = &_Const value;` (**not** `_Borrow T*`) |
 | Mutable borrow | `T *_Borrow ref = &_Mut value;` |
 | Safe function | `_Safe RetType func(ParamType param) { ... }` |
 | Unsafe block | `_Unsafe { ... }` |

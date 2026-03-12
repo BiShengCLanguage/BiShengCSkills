@@ -49,6 +49,7 @@ int main() {
 
 ## 3. Rules
 
+- **`_Owned` goes after the `*`**: write `int *_Owned`, NOT `_Owned int*`. It is a pointer qualifier (like `const`), not a type prefix
 - `_Owned` types have **move semantics**: assignment, passing, returning **transfers** ownership
 - After transfer, the original variable is **dead** — any use is a compile error
 - Before scope ends, `_Owned` variables **must** have ownership released

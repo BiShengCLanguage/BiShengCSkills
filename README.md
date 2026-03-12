@@ -4,8 +4,6 @@ AI Skills for BiSheng C (BSC) — a memory-safe superset of C with Rust-inspired
 
 These Skills enable AI coding tools to generate syntactically and semantically correct BSC code, despite never having been trained on it.
 
-> Inspired by [CangjieSkills](https://gitcode.com/Cangjie-SIG/CangjieSkills)
-
 ## Quick Install
 
 **One-liner** — no manual clone needed:
