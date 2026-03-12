@@ -1,0 +1,177 @@
+{
+  "_comment": "Authoritative mapping from BSC diagnostic names to BSC-Exxxx error codes",
+  "_version": "1.0.0",
+
+  "ownership": {
+    "err_ownership_use_moved": "BSC-E0101",
+    "err_ownership_use_partially_moved": "BSC-E0102",
+    "err_ownership_use_all_moved": "BSC-E0103",
+    "err_ownership_use_uninit": "BSC-E0104",
+    "err_ownership_use_possibly_uninit": "BSC-E0105",
+    "err_ownership_assign_owned": "BSC-E0106",
+    "err_ownership_assign_partially_moved": "BSC-E0107",
+    "err_ownership_assign_possibly_partially_moved": "BSC-E0108",
+    "err_ownership_assign_all_moved": "BSC-E0109",
+    "err_ownership_assign_field_uninit": "BSC-E0110",
+    "err_ownership_assign_field_owned": "BSC-E0111",
+    "err_ownership_assign_field_moved": "BSC-E0112",
+    "err_ownership_assign_field_subfield_owned": "BSC-E0113",
+    "err_ownership_cast_moved": "BSC-E0114",
+    "err_ownership_cast_owned": "BSC-E0115",
+    "err_ownership_cast_uninit": "BSC-E0116",
+    "err_ownership_cast_subfield_owned": "BSC-E0117",
+    "err_ownership_memory_leak": "BSC-E0118",
+    "err_ownership_memory_leak_field": "BSC-E0119",
+    "err_ownership_owned_struct_patially_moved": "BSC-E0120",
+    "err_ownership_owned_struct_not_properly_freed": "BSC-E0121",
+    "err_owned_decl": "BSC-E0122",
+    "err_owned_inderictOwned_type_check": "BSC-E0123",
+    "err_owned_funcPtr_incompatible": "BSC-E0124",
+    "err_owned_qualcheck_incompatible": "BSC-E0125",
+    "err_owned_temporary_memLeak": "BSC-E0126",
+    "err_owned_qualifier_non_pointer": "BSC-E0127",
+    "err_owned_and_borrow_conflict": "BSC-E0128",
+    "err_typecheck_invalid_owned_binOp": "BSC-E0129",
+    "err_typecheck_invalid_owned_unaOp": "BSC-E0130",
+    "err_typecheck_invalid_owned_arrsub": "BSC-E0131"
+  },
+
+  "borrow": {
+    "err_borrow_assign_when_borrowed": "BSC-E0201",
+    "err_borrow_move_when_borrowed": "BSC-E0202",
+    "err_borrow_use_when_mut_borrowed": "BSC-E0203",
+    "err_borrow_mut_borrow_more_than_once": "BSC-E0204",
+    "err_borrow_immut_borrow_when_mut_borrowed": "BSC-E0205",
+    "err_borrow_mut_borrow_when_immut_borrowed": "BSC-E0206",
+    "err_borrow_return_local_borrow": "BSC-E0207",
+    "err_borrow_not_live_long": "BSC-E0208",
+    "err_borrow_live_longer_than_target_var": "BSC-E0209",
+    "err_at_most_one_mut_borrow": "BSC-E0210",
+    "err_return_value_borrow_local": "BSC-E0211",
+    "err_modify_after_be_borrow": "BSC-E0212",
+    "err_read_after_be_mut_borrow": "BSC-E0213",
+    "err_use_expired_borrow_var": "BSC-E0214",
+    "err_borrow_on_borrow": "BSC-E0215",
+    "err_move_borrow": "BSC-E0216",
+    "err_borrow_qualcheck_incompatible": "BSC-E0217",
+    "err_borrow_qualcheck_compare": "BSC-E0218",
+    "err_typecheck_invalid_borrow_not_pointer": "BSC-E0219",
+    "err_typecheck_borrow_func": "BSC-E0220",
+    "err_typecheck_borrow_subscript": "BSC-E0221",
+    "err_funcPtr_incompatible": "BSC-E0222",
+    "err_borrow_not_init": "BSC-E0223",
+    "err_mut_expr_unmodifiable": "BSC-E0224",
+    "err_mut_expr_func": "BSC-E0225",
+    "err_safe_mut": "BSC-E0226",
+    "err_mut_borrow_string_literal": "BSC-E0227",
+    "err_mut_borrow_string_literal_indirect": "BSC-E0228",
+    "err_pass_string_literal_to_mut_borrow": "BSC-E0229"
+  },
+
+  "safe_zone": {
+    "err_unsafe_action": "BSC-E0301",
+    "err_safe_zone_decl": "BSC-E0302",
+    "err_union_member_access_in_safe_zone": "BSC-E0303",
+    "err_unsafe_cast": "BSC-E0304",
+    "err_unsafe_implicit_cast": "BSC-E0305",
+    "err_unsafe_fun_cast": "BSC-E0306",
+    "err_safe_function": "BSC-E0307",
+    "err_safe_global_var": "BSC-E0308",
+    "err_return_inc_dec_void_in_safe_zone": "BSC-E0309",
+    "err_bsc_generic_heterogeneous_redecl": "BSC-E0310",
+    "err_bsc_incompatible_heterogeneous_redecl": "BSC-E0311",
+    "err_bsc_no_matching_heterogeneous_function": "BSC-E0312"
+  },
+
+  "nullability": {
+    "err_nullable_pointer_dereference": "BSC-E0401",
+    "err_pass_nullable_argument": "BSC-E0402",
+    "err_return_nullable": "BSC-E0403",
+    "err_nullable_cast_nonnull": "BSC-E0404",
+    "err_nullable_pointer_access_member": "BSC-E0405",
+    "err_nonnull_assigned_by_nullable": "BSC-E0406",
+    "err_nonnull_init_by_default": "BSC-E0407"
+  },
+
+  "traits": {
+    "err_trait_is_undefined": "BSC-E0501",
+    "err_type_has_not_impl_trait": "BSC-E0502",
+    "err_trait_impl": "BSC-E0503",
+    "err_trait_impl_function_type_conflict": "BSC-E0504",
+    "err_trait_member_not_func": "BSC-E0505",
+    "err_impl_trait_for_instantiated_type": "BSC-E0506",
+    "err_variables_not_trait_pointer": "BSC-E0507",
+    "invalid_param_for_trait_member": "BSC-E0508",
+    "err_unexpected_token_for_impl_trait_decl": "BSC-E0509",
+    "err_expected_identifier_after_trait": "BSC-E0510",
+    "err_trait_def_not_at_top_level": "BSC-E0511",
+    "err_invalid_trait": "BSC-E0512",
+    "err_multi_trait_call_func": "BSC-E0513"
+  },
+
+  "owned_struct": {
+    "err_tag_name": "BSC-E0601",
+    "err_inconsistent_tag_name": "BSC-E0602",
+    "err_need_explicit_constructor_owned_struct": "BSC-E0603",
+    "err_struct_member_redeclared": "BSC-E0604",
+    "err_invalid_member_use_in_class_method": "BSC-E0605",
+    "err_static_class_func": "BSC-E0606",
+    "err_destructor_call": "BSC-E0607",
+    "err_assignment_in_destructor": "BSC-E0608",
+    "err_owned_struct_destructor_name": "BSC-E0609",
+    "err_owned_struct_destructor_body": "BSC-E0610",
+    "invalid_param_for_destructor": "BSC-E0611",
+    "invalid_param_num_for_destructor": "BSC-E0612"
+  },
+
+  "type_system": {
+    "err_incompatible_pointer_cast": "BSC-E0701",
+    "err_incompatible_const_cast": "BSC-E0702",
+    "err_incompatible_owned_cast": "BSC-E0703",
+    "err_cvrqualified_member_type_unsupported": "BSC-E0704",
+    "err_this_type_unsupported": "BSC-E0705"
+  },
+
+  "async": {
+    "err_async_non_function": "BSC-E0801",
+    "err_async_main": "BSC-E0802",
+    "err_await_invalid_scope": "BSC-E0803",
+    "err_async_func_unsupported": "BSC-E0804",
+    "err_not_a_async_call": "BSC-E0805",
+    "err_function_not_found": "BSC-E0806",
+    "err_await_expression_not_found": "BSC-E0807",
+    "err_invalid_async_function": "BSC-E0808"
+  },
+
+  "generics_constexpr": {
+    "err_invalid_struct_definition": "BSC-E0901",
+    "err_extended_type_not_instantiated_type": "BSC-E0902",
+    "err_conflicting_function_declarations": "BSC-E0903",
+    "err_extended_type_not_generic_typealias": "BSC-E0904",
+    "err_generic_typealias_not_within_function": "BSC-E0905",
+    "err_constexpr_func_unsupported": "BSC-E0906",
+    "err_constexpr_func_unsupported_type": "BSC-E0907",
+    "err_constexpr_var_unsupported_type": "BSC-E0908",
+    "err_constexpr_if_cond_expr_unsupported_type": "BSC-E0909"
+  },
+
+  "member_functions": {
+    "err_no_instance_member": "BSC-E1101",
+    "err_attribute_redundant_pointers": "BSC-E1102",
+    "err_attribute_zero_pointer": "BSC-E1103"
+  },
+
+  "operator_overload": {
+    "err_unsupport_overload_fun": "BSC-E1201",
+    "err_unsupport_overload_type": "BSC-E1202",
+    "err_operator_overload_needs_point": "BSC-E1203"
+  },
+
+  "warnings": {
+    "warn_attribute_no_pointers": "BSC-W1101",
+    "warn_attribute_function_pointer": "BSC-W1102",
+    "warn_type_has_not_impl_trait": "BSC-W0501",
+    "warn_destructor_execute": "BSC-W0601",
+    "warn_unknown_bsc_diag_option": "BSC-W0001"
+  }
+}

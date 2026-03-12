@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BSC Error Database",
+  "description": "AI-friendly structured error database for BishengC (BSC) compiler diagnostics",
+  "type": "object",
+  "required": ["version", "errors"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version"
+    },
+    "generated_from_commit": {
+      "type": "string",
+      "description": "Git commit hash this was generated from"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ErrorEntry"
+      }
+    }
+  },
+  "$defs": {
+    "ErrorEntry": {
+      "type": "object",
+      "required": ["code", "diagnostic_name", "severity", "message_template", "category", "cause", "fix_strategies"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^BSC-[EW]\\d{4}$",
+          "description": "BSC error code, e.g. BSC-E0101"
+        },
+        "diagnostic_name": {
+          "type": "string",
+          "description": "Internal Clang diagnostic name, e.g. err_ownership_use_moved"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warning", "note"],
+          "description": "Diagnostic severity level"
+        },
+        "message_template": {
+          "type": "string",
+          "description": "Compiler message template with %0, %1 placeholders"
+        },
+        "warning_flag": {
+          "type": "string",
+          "description": "Compiler warning flag, e.g. -Wuse-moved-owned"
+        },
+        "group_path": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Diagnostic group hierarchy from root to leaf"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["ownership", "borrow", "safe_zone", "nullability", "traits", "owned_struct", "type_system", "async", "generics_constexpr", "parse", "member_functions", "operator_overload"],
+          "description": "Error category"
+        },
+        "subcategory": {
+          "type": "string",
+          "description": "More specific classification within the category"
+        },
+        "cause": {
+          "type": "string",
+          "description": "Plain-English explanation of why this error occurs"
+        },
+        "fix_strategies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["strategy", "description"],
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "description": "Short identifier for the fix approach"
+              },
+              "description": {
+                "type": "string",
+                "description": "How to apply this fix"
+              }
+            }
+          },
+          "description": "Ordered list of fix strategies, most common first"
+        },
+        "example": {
+          "type": "object",
+          "properties": {
+            "bad_code": { "type": "string" },
+            "good_code": { "type": "string" },
+            "error_line": { "type": "integer" }
+          },
+          "description": "Minimal reproducer and fix"
+        },
+        "related_errors": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^BSC-[EW]\\d{4}$" },
+          "description": "Related BSC error codes"
+        },
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Search keywords for fuzzy matching"
+        },
+        "bsc_concepts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "BSC language concepts involved"
+        },
+        "rust_equivalent": {
+          "type": "string",
+          "description": "Equivalent Rust compiler error code if applicable"
+        }
+      }
+    }
+  }
+}

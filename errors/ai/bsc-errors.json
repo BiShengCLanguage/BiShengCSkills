@@ -1,0 +1,3887 @@
+{
+  "version": "1.0.0",
+  "generated_from_commit": "baddf6806d94",
+  "errors": [
+    {
+      "code": "BSC-E0101",
+      "diagnostic_name": "err_ownership_use_moved",
+      "severity": "error",
+      "message_template": "use of moved value: `%0`",
+      "warning_flag": "-Wuse-moved-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "UseOwned",
+        "UseMovedOwned"
+      ],
+      "category": "ownership",
+      "cause": "An `_Owned` pointer was used after its ownership was transferred (moved) to another variable or consumed by a function call. Once ownership moves, the source variable becomes invalid and cannot be read, dereferenced, or passed to another function. The compiler tracks these moves and flags any subsequent use of the invalidated variable.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_use_moved]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    int *_Owned q = p;   // ownership moves from p to q\n    *p = 10;             // error: use of moved value: `p`\n}",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    *p = 10;             // use p before transferring ownership\n    int *_Owned q = p;   // ownership moves from p to q\n    free_owned<int>(q);\n}"
+      },
+      "keywords": [
+        "moved",
+        "ownership",
+        "use"
+      ]
+    },
+    {
+      "code": "BSC-E0102",
+      "diagnostic_name": "err_ownership_use_partially_moved",
+      "severity": "error",
+      "message_template": "use of partially moved value: `%0`, %1 moved",
+      "warning_flag": "-Wuse-moved-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "UseOwned",
+        "UseMovedOwned"
+      ],
+      "category": "ownership",
+      "cause": "A struct or composite value containing `_Owned` pointer fields was used after one or more (but not all) of its `_Owned` fields had their ownership moved out. The struct is in a partially valid state: some fields are still owned while others have been invalidated. Using the struct as a whole is not permitted because the moved fields are no longer valid.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_use_partially_moved]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(void) {\n    _Owned struct Pair pair;\n    pair.first = safe_malloc<int>(1);\n    pair.second = safe_malloc<int>(2);\n    int *_Owned a = pair.first;   // pair.first is moved\n    consume(pair);                // error: use of partially moved value: `pair`, first moved\n}",
+        "good_code": "void example(void) {\n    _Owned struct Pair pair;\n    pair.first = safe_malloc<int>(1);\n    pair.second = safe_malloc<int>(2);\n    int *_Owned a = pair.first;        // pair.first is moved\n    pair.first = safe_malloc<int>(3);  // reinitialize the moved field\n    consume(pair);                     // OK: pair is fully valid again\n    free_owned<int>(a);\n}"
+      },
+      "keywords": [
+        "moved",
+        "ownership",
+        "partially",
+        "use"
+      ]
+    },
+    {
+      "code": "BSC-E0103",
+      "diagnostic_name": "err_ownership_use_all_moved",
+      "severity": "error",
+      "message_template": "use of all moved value: `%0`",
+      "warning_flag": "-Wuse-moved-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "UseOwned",
+        "UseMovedOwned"
+      ],
+      "category": "ownership",
+      "cause": "A struct or composite value was used after all of its `_Owned` fields had their ownership moved out individually. The entire struct is now invalid because every owned field has been transferred elsewhere. This is distinct from a simple move of the struct itself -- here each field was moved separately, leaving the struct completely drained.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_use_all_moved]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(void) {\n    _Owned struct Pair pair;\n    pair.first = safe_malloc<int>(1);\n    pair.second = safe_malloc<int>(2);\n    int *_Owned a = pair.first;\n    int *_Owned b = pair.second;\n    consume(pair);   // error: use of all moved value: `pair`\n}",
+        "good_code": "void example(void) {\n    _Owned struct Pair pair;\n    pair.first = safe_malloc<int>(1);\n    pair.second = safe_malloc<int>(2);\n    int *_Owned a = pair.first;\n    int *_Owned b = pair.second;\n    // Use a and b directly instead of pair\n    free_owned<int>(a);\n    free_owned<int>(b);\n}"
+      },
+      "keywords": [
+        "all",
+        "moved",
+        "ownership",
+        "use"
+      ]
+    },
+    {
+      "code": "BSC-E0104",
+      "diagnostic_name": "err_ownership_use_uninit",
+      "severity": "error",
+      "message_template": "use of uninitialized value: `%0`",
+      "warning_flag": "-Wuse-uninit-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "UseOwned",
+        "UseUninitOwned"
+      ],
+      "category": "ownership",
+      "cause": "An `_Owned` pointer variable was used before any value was assigned to it. Unlike regular C pointers where reading an uninitialized variable is merely undefined behavior, BSC treats this as a hard error for `_Owned` pointers. The compiler requires every `_Owned` variable to be definitively initialized before use to prevent double-free or use-after-free scenarios.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_use_uninit]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned p;\n    *p = 42;       // error: use of uninitialized value: `p`\n}",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(0);\n    *p = 42;       // OK: p is initialized\n    free_owned<int>(p);\n}"
+      },
+      "keywords": [
+        "ownership",
+        "uninit",
+        "uninitialized",
+        "use"
+      ]
+    },
+    {
+      "code": "BSC-E0105",
+      "diagnostic_name": "err_ownership_use_possibly_uninit",
+      "severity": "error",
+      "message_template": "use of possibly uninitialized value: `%0`",
+      "warning_flag": "-Wuse-uninit-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "UseOwned",
+        "UseUninitOwned"
+      ],
+      "category": "ownership",
+      "cause": "An `_Owned` pointer was used on a code path where it might not have been initialized. This typically happens when the variable is initialized inside a conditional branch but used unconditionally afterward. The compiler performs flow-sensitive analysis and detects that at least one execution path reaches the use without a prior initialization.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_use_possibly_uninit]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(int cond) {\n    int *_Owned p;\n    if (cond) {\n        p = safe_malloc<int>(42);\n    }\n    free_owned<int>(p);   // error: use of possibly uninitialized value: `p`\n}",
+        "good_code": "void example(int cond) {\n    int *_Owned p;\n    if (cond) {\n        p = safe_malloc<int>(42);\n    } else {\n        p = safe_malloc<int>(0);\n    }\n    free_owned<int>(p);   // OK: p is initialized on all paths\n}"
+      },
+      "keywords": [
+        "ownership",
+        "possibly",
+        "uninit",
+        "uninitialized",
+        "use"
+      ]
+    },
+    {
+      "code": "BSC-E0106",
+      "diagnostic_name": "err_ownership_assign_owned",
+      "severity": "error",
+      "message_template": "assign to _Owned value: `%0`",
+      "warning_flag": "-Wassign-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "AssignOwned"
+      ],
+      "category": "ownership",
+      "cause": "A new value was assigned to an `_Owned` pointer that already owns allocated memory. This would silently leak the previously owned memory because the old pointer value is overwritten without being freed first. BSC requires that the current ownership be released (via `free_owned` or a move) before a new value can be assigned.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_assign_owned]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(1);\n    p = safe_malloc<int>(2);   // error: assign to _Owned value: `p`\n}",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(1);\n    free_owned<int>(p);        // release current ownership\n    p = safe_malloc<int>(2);   // OK: p was freed first\n    free_owned<int>(p);\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "assign",
+        "owned",
+        "ownership"
+      ]
+    },
+    {
+      "code": "BSC-E0107",
+      "diagnostic_name": "err_ownership_assign_partially_moved",
+      "severity": "error",
+      "message_template": "assign to partially moved value: `%0`, %1 moved",
+      "warning_flag": "-Wassign-moved-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "AssignOwned",
+        "AssignMovedOwned"
+      ],
+      "category": "ownership",
+      "cause": "A whole-struct assignment was attempted on an `_Owned` struct where some fields have been moved out but others still hold ownership. Overwriting the entire struct would leak the memory owned by the fields that were not moved. The compiler requires that the struct be in a consistent state (either fully owned or fully moved/freed) before a whole-struct assignment.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_assign_partially_moved]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(void) {\n    _Owned struct Pair pair;\n    pair.first = safe_malloc<int>(1);\n    pair.second = safe_malloc<int>(2);\n    int *_Owned a = pair.first;   // pair.first moved\n    pair = make_pair();           // error: assign to partially moved value: `pair`, first moved\n}",
+        "good_code": "void example(void) {\n    _Owned struct Pair pair;\n    pair.first = safe_malloc<int>(1);\n    pair.second = safe_malloc<int>(2);\n    int *_Owned a = pair.first;\n    free_owned<int>(pair.second);  // free remaining field\n    pair = make_pair();            // OK: no owned fields remain\n    // ... use pair ...\n    free_owned<int>(a);\n}"
+      },
+      "keywords": [
+        "assign",
+        "moved",
+        "ownership",
+        "partially"
+      ]
+    },
+    {
+      "code": "BSC-E0108",
+      "diagnostic_name": "err_ownership_assign_possibly_partially_moved",
+      "severity": "error",
+      "message_template": "assign to possibly partially moved value: `%0`, %1 possibly moved",
+      "warning_flag": "-Wassign-moved-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "AssignOwned",
+        "AssignMovedOwned"
+      ],
+      "category": "ownership",
+      "cause": "A whole-struct assignment was attempted on an `_Owned` struct where some fields may or may not have been moved out depending on the control flow. The compiler cannot guarantee that the struct is in a consistent state at the assignment point, because some execution paths move a field while others do not. This ambiguity makes it impossible to determine whether the assignment would leak memory.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_assign_possibly_partially_moved]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(int cond) {\n    _Owned struct Pair pair;\n    pair.first = safe_malloc<int>(1);\n    pair.second = safe_malloc<int>(2);\n    if (cond) {\n        int *_Owned a = pair.first;   // pair.first moved on this path\n        free_owned<int>(a);\n    }\n    pair = make_pair();   // error: assign to possibly partially moved value: `pair`, first possibly moved\n}",
+        "good_code": "void example(int cond) {\n    _Owned struct Pair pair;\n    pair.first = safe_malloc<int>(1);\n    pair.second = safe_malloc<int>(2);\n    // Free both fields unconditionally\n    free_owned<int>(pair.first);\n    free_owned<int>(pair.second);\n    pair = make_pair();   // OK: all fields freed on all paths\n}"
+      },
+      "keywords": [
+        "assign",
+        "moved",
+        "ownership",
+        "partially",
+        "possibly"
+      ]
+    },
+    {
+      "code": "BSC-E0109",
+      "diagnostic_name": "err_ownership_assign_all_moved",
+      "severity": "error",
+      "message_template": "assign to all moved value: `%0`",
+      "warning_flag": "-Wassign-moved-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "AssignOwned",
+        "AssignMovedOwned"
+      ],
+      "category": "ownership",
+      "cause": "A whole-struct assignment was attempted on an `_Owned` struct where all `_Owned` fields have been individually moved out. While this might seem safe (no memory would leak), BSC still flags this because the struct was drained field-by-field rather than moved as a whole unit. The compiler treats an all-moved struct as being in an invalid state that requires explicit reinitialization through field-by-field assignment rather than whole-struct assignment.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_assign_all_moved]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(void) {\n    _Owned struct Pair pair;\n    pair.first = safe_malloc<int>(1);\n    pair.second = safe_malloc<int>(2);\n    int *_Owned a = pair.first;\n    int *_Owned b = pair.second;\n    pair = make_pair();   // error: assign to all moved value: `pair`\n}",
+        "good_code": "void example(void) {\n    _Owned struct Pair pair;\n    pair.first = safe_malloc<int>(1);\n    pair.second = safe_malloc<int>(2);\n    int *_Owned a = pair.first;\n    int *_Owned b = pair.second;\n    // Reinitialize field by field\n    pair.first = safe_malloc<int>(3);\n    pair.second = safe_malloc<int>(4);\n    // ... use pair, a, b ...\n    free_owned<int>(a);\n    free_owned<int>(b);\n}"
+      },
+      "keywords": [
+        "all",
+        "assign",
+        "moved",
+        "ownership"
+      ]
+    },
+    {
+      "code": "BSC-E0110",
+      "diagnostic_name": "err_ownership_assign_field_uninit",
+      "severity": "error",
+      "message_template": "assign to part of uninitialized value: `%0`",
+      "warning_flag": "-Wassign-uninit-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "AssignOwned",
+        "AssignUninitOwned"
+      ],
+      "category": "ownership",
+      "cause": "An assignment was made to a field of an `_Owned` struct that has not been initialized at all. BSC requires that the struct variable itself be in a known state before individual fields can be assigned. Assigning to a single field of a completely uninitialized struct leaves other fields in an indeterminate state, which can lead to double-free or leak issues when the struct goes out of scope.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_assign_field_uninit]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(void) {\n    _Owned struct Pair pair;\n    // pair is completely uninitialized\n    pair.first = safe_malloc<int>(1);   // error: assign to part of uninitialized value: `pair`\n}",
+        "good_code": "void example(void) {\n    _Owned struct Pair pair = { .first = safe_malloc<int>(1), .second = safe_malloc<int>(2) };\n    // Now pair is fully initialized\n    free_owned<int>(pair.first);\n    free_owned<int>(pair.second);\n}"
+      },
+      "keywords": [
+        "assign",
+        "field",
+        "ownership",
+        "uninit",
+        "uninitialized"
+      ]
+    },
+    {
+      "code": "BSC-E0111",
+      "diagnostic_name": "err_ownership_assign_field_owned",
+      "severity": "error",
+      "message_template": "assign to part of _Owned value: `%0`",
+      "warning_flag": "-Wassign-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "AssignOwned"
+      ],
+      "category": "ownership",
+      "cause": "An assignment was made to a field of an `_Owned` struct when that field already holds an owned value. Overwriting the field would leak the memory it currently owns. Just as with reassigning a top-level `_Owned` pointer, BSC requires the field's current value to be freed or moved before a new value can be assigned to it.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_assign_field_owned]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(void) {\n    _Owned struct Pair pair = { .first = safe_malloc<int>(1), .second = safe_malloc<int>(2) };\n    pair.first = safe_malloc<int>(3);   // error: assign to part of _Owned value: `pair`\n}",
+        "good_code": "void example(void) {\n    _Owned struct Pair pair = { .first = safe_malloc<int>(1), .second = safe_malloc<int>(2) };\n    free_owned<int>(pair.first);        // free the current value first\n    pair.first = safe_malloc<int>(3);   // OK: field was freed\n    free_owned<int>(pair.first);\n    free_owned<int>(pair.second);\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "assign",
+        "field",
+        "owned",
+        "ownership"
+      ]
+    },
+    {
+      "code": "BSC-E0112",
+      "diagnostic_name": "err_ownership_assign_field_moved",
+      "severity": "error",
+      "message_template": "assign to part of moved value: `%0`",
+      "warning_flag": "-Wassign-moved-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "AssignOwned",
+        "AssignMovedOwned"
+      ],
+      "category": "ownership",
+      "cause": "An assignment was made to a field of an `_Owned` struct whose ownership has been moved as a whole. Once the entire struct has been moved to another variable or consumed by a function, the original variable is invalid. Assigning to a field of a moved struct is not permitted because the struct itself no longer exists as a valid entity in the current scope.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_assign_field_moved]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(void) {\n    _Owned struct Pair pair = { .first = safe_malloc<int>(1), .second = safe_malloc<int>(2) };\n    consume(pair);                       // pair is moved\n    pair.first = safe_malloc<int>(3);    // error: assign to part of moved value: `pair`\n}",
+        "good_code": "void example(void) {\n    _Owned struct Pair pair = { .first = safe_malloc<int>(1), .second = safe_malloc<int>(2) };\n    consume(pair);    // pair is moved\n    // Create a fresh struct instead\n    _Owned struct Pair pair2 = { .first = safe_malloc<int>(3), .second = safe_malloc<int>(4) };\n    consume(pair2);\n}"
+      },
+      "keywords": [
+        "assign",
+        "field",
+        "moved",
+        "ownership"
+      ]
+    },
+    {
+      "code": "BSC-E0113",
+      "diagnostic_name": "err_ownership_assign_field_subfield_owned",
+      "severity": "error",
+      "message_template": "assign to subfield _Owned value: `%0`, %1 _Owned",
+      "warning_flag": "-Wassign-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "AssignOwned"
+      ],
+      "category": "ownership",
+      "cause": "An assignment was attempted to a nested field (subfield) of an `_Owned` struct where the subfield or its parent still holds an owned value. This is the nested variant of BSC-E0111: when structs contain other structs with `_Owned` fields, the ownership tracking extends transitively. Overwriting a subfield that still owns memory would leak that memory.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_assign_field_subfield_owned]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Inner {\n    int *_Owned data;\n};\n\n_Owned struct Outer {\n    _Owned struct Inner inner;\n    int *_Owned other;\n};\n\nvoid example(void) {\n    _Owned struct Outer obj = { .inner = { .data = safe_malloc<int>(1) }, .other = safe_malloc<int>(2) };\n    obj.inner.data = safe_malloc<int>(3);   // error: assign to subfield _Owned value: `obj`, inner.data _Owned\n}",
+        "good_code": "void example(void) {\n    _Owned struct Outer obj = { .inner = { .data = safe_malloc<int>(1) }, .other = safe_malloc<int>(2) };\n    free_owned<int>(obj.inner.data);         // free current subfield value\n    obj.inner.data = safe_malloc<int>(3);    // OK: subfield was freed\n    free_owned<int>(obj.inner.data);\n    free_owned<int>(obj.other);\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "assign",
+        "field",
+        "owned",
+        "ownership",
+        "subfield"
+      ]
+    },
+    {
+      "code": "BSC-E0114",
+      "diagnostic_name": "err_ownership_cast_moved",
+      "severity": "error",
+      "message_template": "invalid cast to `void * _Owned` of moved or uninitialized value: `%0`",
+      "warning_flag": "-Wcast-moved-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "CastOwned",
+        "CastMovedOwned"
+      ],
+      "category": "ownership",
+      "cause": "A cast to `void *_Owned` was attempted on a variable whose ownership has already been moved or that was never initialized. Casting a moved or uninitialized pointer to `void *_Owned` would create a dangling owned pointer, because the underlying memory is either owned elsewhere or does not exist. This would lead to double-free or use-after-free bugs.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_cast_moved]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(1);\n    int *_Owned q = p;                   // p is moved\n    void *_Owned v = (void *_Owned)p;    // error: invalid cast to `void * _Owned` of moved or uninitialized value: `p`\n}",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(1);\n    void *_Owned v = (void *_Owned)p;    // OK: p still owns memory\n    free_owned<void>(v);\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "cast",
+        "invalid",
+        "moved",
+        "ownership",
+        "uninitialized"
+      ]
+    },
+    {
+      "code": "BSC-E0115",
+      "diagnostic_name": "err_ownership_cast_owned",
+      "severity": "error",
+      "message_template": "invalid cast to `void * _Owned` of _Owned value: `%0`",
+      "warning_flag": "-Wcast-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "CastOwned"
+      ],
+      "category": "ownership",
+      "cause": "A cast to `void *_Owned` was attempted on a variable that currently owns memory. This cast would create a second `_Owned` reference to the same memory, violating the single-ownership invariant. The original variable would still appear to own the memory, leading to potential double-free when both the original and the cast result are freed.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_cast_owned]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    void *_Owned v = (void *_Owned)p;    // error: invalid cast to `void * _Owned` of _Owned value: `p`\n    free_owned<int>(p);\n    free_owned<void>(v);                 // would be double-free\n}",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    void *_Owned v = (void *_Owned)p;    // ownership transfers through the cast\n    // Do not use p after this point\n    free_owned<void>(v);\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "cast",
+        "invalid",
+        "owned",
+        "ownership"
+      ]
+    },
+    {
+      "code": "BSC-E0116",
+      "diagnostic_name": "err_ownership_cast_uninit",
+      "severity": "error",
+      "message_template": "invalid cast to `void * _Owned` of uninit value: `%0`",
+      "warning_flag": "-Wcast-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "CastOwned"
+      ],
+      "category": "ownership",
+      "cause": "A cast to `void *_Owned` was attempted on a variable that has never been initialized. The pointer contains an indeterminate value, and casting it to `void *_Owned` would create an owned pointer pointing to arbitrary memory. Any subsequent operation on this pointer (dereference, free) would cause undefined behavior.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_cast_uninit]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned p;\n    void *_Owned v = (void *_Owned)p;    // error: invalid cast to `void * _Owned` of uninit value: `p`\n}",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    void *_Owned v = (void *_Owned)p;    // OK: p is initialized\n    free_owned<void>(v);\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "cast",
+        "invalid",
+        "ownership",
+        "uninit"
+      ]
+    },
+    {
+      "code": "BSC-E0117",
+      "diagnostic_name": "err_ownership_cast_subfield_owned",
+      "severity": "error",
+      "message_template": "invalid cast to `void * _Owned` of not all moved value: `%0`, %1 _Owned",
+      "warning_flag": "-Wcast-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "CastOwned"
+      ],
+      "category": "ownership",
+      "cause": "A cast to `void *_Owned` was attempted on an `_Owned` struct pointer where some fields have been moved but others still hold ownership. Casting the struct pointer to `void *_Owned` in this inconsistent state is not permitted because it is unclear whether the cast should transfer ownership of the remaining fields. The struct must be in a fully owned or fully moved state for a safe cast.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_cast_subfield_owned]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(void) {\n    _Owned struct Pair *_Owned pp = safe_malloc<_Owned struct Pair>((struct Pair){0});\n    int *_Owned a = pp->first;                  // first is moved\n    void *_Owned v = (void *_Owned)pp;          // error: invalid cast to `void * _Owned` of not all moved value: `pp`, second _Owned\n}",
+        "good_code": "void example(void) {\n    _Owned struct Pair *_Owned pp = safe_malloc<_Owned struct Pair>((struct Pair){0});\n    pp->first = safe_malloc<int>(1);\n    pp->second = safe_malloc<int>(2);\n    // Cast while fully owned\n    void *_Owned v = (void *_Owned)pp;\n    free_owned<void>(v);\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "cast",
+        "invalid",
+        "moved",
+        "owned",
+        "ownership",
+        "subfield"
+      ]
+    },
+    {
+      "code": "BSC-E0118",
+      "diagnostic_name": "err_ownership_memory_leak",
+      "severity": "error",
+      "message_template": "memory leak of value: `%0`",
+      "warning_flag": "-Wcheck-memory-leak",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "CheckMemoryLeak"
+      ],
+      "category": "ownership",
+      "cause": "An `_Owned` pointer variable goes out of scope while still owning heap memory. BSC requires that all `_Owned` pointers be either freed or moved before the end of their scope. If the pointer is not explicitly handled, the allocated memory is leaked. This is one of the most fundamental ownership errors and directly corresponds to a memory leak bug.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_memory_leak]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    // p goes out of scope without being freed or moved\n}   // error: memory leak of value: `p`",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    free_owned<int>(p);   // OK: ownership released\n}"
+      },
+      "keywords": [
+        "leak",
+        "memory",
+        "ownership"
+      ]
+    },
+    {
+      "code": "BSC-E0119",
+      "diagnostic_name": "err_ownership_memory_leak_field",
+      "severity": "error",
+      "message_template": "field memory leak of value: `%0`, %1 leak",
+      "warning_flag": "-Wcheck-memory-leak",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "CheckMemoryLeak"
+      ],
+      "category": "ownership",
+      "cause": "An `_Owned` struct goes out of scope while one or more of its `_Owned` fields still own heap memory. Even if the struct itself was handled (e.g., some fields were moved), the remaining fields still hold allocations that are not freed. Each `_Owned` field in a struct must be individually freed or moved before the struct goes out of scope.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_memory_leak_field]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(void) {\n    _Owned struct Pair pair = { .first = safe_malloc<int>(1), .second = safe_malloc<int>(2) };\n    free_owned<int>(pair.first);\n    // pair.second is not freed\n}   // error: field memory leak of value: `pair`, second leak",
+        "good_code": "void example(void) {\n    _Owned struct Pair pair = { .first = safe_malloc<int>(1), .second = safe_malloc<int>(2) };\n    free_owned<int>(pair.first);\n    free_owned<int>(pair.second);   // free all fields\n}"
+      },
+      "keywords": [
+        "field",
+        "leak",
+        "memory",
+        "ownership"
+      ]
+    },
+    {
+      "code": "BSC-E0120",
+      "diagnostic_name": "err_ownership_owned_struct_patially_moved",
+      "severity": "error",
+      "message_template": "partially moved _Owned struct:`%0` at scope end, %1 moved",
+      "warning_flag": "-Wpartially-moved-struct",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "PartiallyMovedStruct"
+      ],
+      "category": "ownership",
+      "cause": "An `_Owned` struct reached the end of its scope in a partially moved state: some fields had their ownership transferred while others were not freed or moved. This is related to but distinct from BSC-E0119. The compiler specifically flags that the struct is in an inconsistent state at scope end, meaning neither a full free nor a full move was performed. The unmoved fields leak and the struct is left in an invalid intermediate state.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_owned_struct_patially_moved]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n};\n\nvoid example(void) {\n    _Owned struct Pair pair = { .first = safe_malloc<int>(1), .second = safe_malloc<int>(2) };\n    int *_Owned a = pair.first;   // first is moved out\n    free_owned<int>(a);\n    // pair.second still owned, pair.first moved\n}   // error: partially moved _Owned struct:`pair` at scope end, first moved",
+        "good_code": "void example(void) {\n    _Owned struct Pair pair = { .first = safe_malloc<int>(1), .second = safe_malloc<int>(2) };\n    int *_Owned a = pair.first;\n    free_owned<int>(a);\n    free_owned<int>(pair.second);   // free the remaining field too\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "moved",
+        "owned",
+        "ownership",
+        "partially",
+        "patially",
+        "scope",
+        "struct"
+      ]
+    },
+    {
+      "code": "BSC-E0121",
+      "diagnostic_name": "err_ownership_owned_struct_not_properly_freed",
+      "severity": "error",
+      "message_template": "destructor for`%0` incorrect, %1 of _Owned type and needs to be handled manually",
+      "warning_flag": "-Wdestruct-owned-struct",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "DestructOwnedStruct"
+      ],
+      "category": "ownership",
+      "cause": "The destructor defined for an `_Owned` struct does not properly handle all of the struct's `_Owned` fields. BSC verifies that destructors free or move every `_Owned` field in the struct. If any `_Owned` field is not explicitly handled within the destructor body, the compiler reports this error because those fields would leak when the destructor is called.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_ownership_owned_struct_not_properly_freed]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n\n    void ~Pair(Pair this) {\n        free_owned<int>(this.first);\n        // forgot to free this.second\n    }\n};\n// error: destructor for`Pair` incorrect, second of _Owned type and needs to be handled manually",
+        "good_code": "_Owned struct Pair {\n    int *_Owned first;\n    int *_Owned second;\n\n    void ~Pair(Pair this) {\n        free_owned<int>(this.first);\n        free_owned<int>(this.second);   // handle all _Owned fields\n    }\n};"
+      },
+      "keywords": [
+        "_Owned",
+        "destructor",
+        "freed",
+        "handled",
+        "incorrect",
+        "manually",
+        "needs",
+        "not"
+      ]
+    },
+    {
+      "code": "BSC-E0122",
+      "diagnostic_name": "err_owned_decl",
+      "severity": "error",
+      "message_template": "%0 cannot be qualified by '_Owned'",
+      "category": "ownership",
+      "cause": "The `_Owned` qualifier was applied to a declaration that does not support ownership semantics. Not all declarations can be qualified with `_Owned`. For example, function declarations, typedef names, or certain storage classes may not be compatible with ownership tracking. The `_Owned` qualifier is only meaningful on pointer types that represent heap-allocated memory.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_owned_decl]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned int x = 42;           // error: x cannot be qualified by '_Owned'\n_Owned void func(void);      // error: func cannot be qualified by '_Owned'",
+        "good_code": "int x = 42;\nint *_Owned p = safe_malloc<int>(42);   // OK: _Owned on a pointer type\nfree_owned<int>(p);"
+      },
+      "keywords": [
+        "_Owned",
+        "decl",
+        "owned",
+        "qualified"
+      ]
+    },
+    {
+      "code": "BSC-E0123",
+      "diagnostic_name": "err_owned_inderictOwned_type_check",
+      "severity": "error",
+      "message_template": "%select{type of %2 cannot qualified by '%1' |type of %2 cannot qualified by '%1', %3 contains '%1' type |type of %2 cannot qualified by '%1'(even indirectly), %3 contains '%1' type}0",
+      "category": "ownership",
+      "cause": "The compiler detected that a type is being qualified with `_Owned` (or contains `_Owned` indirectly through nested types) in a context where this is not allowed. BSC performs deep type inspection and tracks `_Owned` qualifiers through nested structs, typedefs, and pointer chains. If an `_Owned` type appears at a nesting level where ownership cannot be properly tracked, this error is emitted. The three message variants correspond to: direct qualification error, direct containment of `_Owned`, and indirect (transitive) containment of `_Owned`.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_owned_inderictOwned_type_check]"
+        }
+      ],
+      "example": {
+        "bad_code": "// Suppose Container has an _Owned field\nstruct Container {\n    int *_Owned data;\n};\n\nvoid func(struct Container c);   // error: type of c cannot qualified by '_Owned', data contains '_Owned' type",
+        "good_code": "struct Container {\n    int *_Owned data;\n};\n\nvoid func(struct Container *_Owned c) {   // OK: pass by owned pointer\n    free_owned<int>(c->data);\n    free_owned<struct Container>(c);\n}"
+      },
+      "keywords": [
+        "check",
+        "contains",
+        "inderictOwned",
+        "indirectly",
+        "owned",
+        "qualified",
+        "select",
+        "type"
+      ]
+    },
+    {
+      "code": "BSC-E0124",
+      "diagnostic_name": "err_owned_funcPtr_incompatible",
+      "severity": "error",
+      "message_template": "cannot cast %0 to %1",
+      "category": "ownership",
+      "cause": "A function pointer cast was attempted between two function pointer types that have incompatible `_Owned` qualifiers in their parameter or return types. Function pointer casts that change ownership semantics are dangerous because the caller and callee would disagree about who owns the memory. For example, casting a function that takes a non-owned pointer to one that takes an `_Owned` pointer could lead to double-free or leak.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_owned_funcPtr_incompatible]"
+        }
+      ],
+      "example": {
+        "bad_code": "typedef void (*FreeFunc)(int *_Owned);\ntypedef void (*PlainFunc)(int *);\n\nvoid my_func(int *p) { /* ... */ }\n\nvoid example(void) {\n    FreeFunc f = (FreeFunc)my_func;   // error: cannot cast void (*)(int *) to void (*)(int *_Owned)\n}",
+        "good_code": "typedef void (*FreeFunc)(int *_Owned);\n\nvoid my_func(int *_Owned p) {\n    free_owned<int>(p);\n}\n\nvoid example(void) {\n    FreeFunc f = my_func;   // OK: signatures match\n}"
+      },
+      "keywords": [
+        "funcPtr",
+        "incompatible",
+        "owned"
+      ]
+    },
+    {
+      "code": "BSC-E0125",
+      "diagnostic_name": "err_owned_qualcheck_incompatible",
+      "severity": "error",
+      "message_template": "incompatible _Owned types, cannot cast %0 to %1",
+      "category": "ownership",
+      "cause": "A cast was attempted between two pointer types with incompatible `_Owned` qualifications. BSC enforces that casts preserve ownership semantics: you cannot cast a non-owned pointer to an `_Owned` pointer (which would fabricate ownership) or cast an `_Owned` pointer to a non-owned pointer (which would silently discard ownership and leak memory). Only compatible ownership-preserving casts are allowed.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_owned_qualcheck_incompatible]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *p = (int *)malloc(sizeof(int));\n    int *_Owned q = (int *_Owned)p;   // error: incompatible _Owned types, cannot cast int * to int *_Owned\n}",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(0);   // OK: safe_malloc returns _Owned\n    free_owned<int>(p);\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "incompatible",
+        "owned",
+        "qualcheck",
+        "types"
+      ]
+    },
+    {
+      "code": "BSC-E0126",
+      "diagnostic_name": "err_owned_temporary_memLeak",
+      "severity": "error",
+      "message_template": "memory leak because temporary variable '%0' is _Owned or indirect _Owned type, please fix it",
+      "category": "ownership",
+      "cause": "A temporary (unnamed or short-lived) variable of `_Owned` type or a type that indirectly contains `_Owned` fields was created but its result was not captured. Since temporary values are destroyed at the end of the full expression, any `_Owned` memory they hold would be leaked. BSC detects this pattern and requires that the result of expressions producing `_Owned` types be stored in a named variable so the ownership can be properly managed.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_owned_temporary_memLeak]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Data {\n    int *_Owned value;\n};\n\n_Owned struct Data make_data(void);\n\nvoid example(void) {\n    make_data();   // error: memory leak because temporary variable 'make_data()' is _Owned or indirect _Owned type, please fix it\n}",
+        "good_code": "void example(void) {\n    _Owned struct Data d = make_data();   // capture the result\n    free_owned<int>(d.value);             // properly free\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "indirect",
+        "memLeak",
+        "memory",
+        "owned",
+        "temporary",
+        "variable"
+      ]
+    },
+    {
+      "code": "BSC-E0127",
+      "diagnostic_name": "err_owned_qualifier_non_pointer",
+      "severity": "error",
+      "message_template": "type of %1 cannot be qualified by '%0'",
+      "warning_flag": "-Wowned-qualifier-type",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "OwnedQualifierType"
+      ],
+      "category": "ownership",
+      "cause": "The `_Owned` qualifier was applied to a non-pointer type. The `_Owned` qualifier is only meaningful on pointer types because it indicates that the pointer is responsible for the lifetime of the heap memory it points to. Applying `_Owned` to an integer, float, struct (non-pointer), or other non-pointer type has no meaningful ownership semantics and is rejected by the compiler.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_owned_qualifier_non_pointer]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int _Owned x = 42;       // error: type of x cannot be qualified by '_Owned'\n    float _Owned f = 3.14;   // error: type of f cannot be qualified by '_Owned'\n}",
+        "good_code": "void example(void) {\n    int x = 42;\n    int *_Owned p = safe_malloc<int>(42);   // OK: _Owned on pointer type\n    free_owned<int>(p);\n}"
+      },
+      "keywords": [
+        "non",
+        "owned",
+        "pointer",
+        "qualified",
+        "qualifier"
+      ]
+    },
+    {
+      "code": "BSC-E0128",
+      "diagnostic_name": "err_owned_and_borrow_conflict",
+      "severity": "error",
+      "message_template": "cannot combine '_Owned' and '_Borrow' qualifiers on the same type",
+      "warning_flag": "-Wowned-qualifier-type",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "OwnedQualifierType"
+      ],
+      "category": "ownership",
+      "cause": "Both `_Owned` and `_Borrow` qualifiers were applied to the same type. These qualifiers are mutually exclusive: `_Owned` means the pointer owns its memory and is responsible for freeing it, while `_Borrow` means the pointer is a temporary, non-owning reference to memory owned elsewhere. A pointer cannot simultaneously own and not own the memory it points to.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_owned_and_borrow_conflict]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned _Borrow p;   // error: cannot combine '_Owned' and '_Borrow' qualifiers on the same type\n}",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    int *_Borrow b = &*p;   // borrow from p\n    // Use b for temporary access\n    free_owned<int>(p);      // p owns the memory\n}"
+      },
+      "keywords": [
+        "_Borrow",
+        "_Owned",
+        "and",
+        "borrow",
+        "combine",
+        "conflict",
+        "owned",
+        "qualifiers"
+      ]
+    },
+    {
+      "code": "BSC-E0129",
+      "diagnostic_name": "err_typecheck_invalid_owned_binOp",
+      "severity": "error",
+      "message_template": "invalid operands to binary expression (%0 and %1)",
+      "category": "ownership",
+      "cause": "A binary operator (such as `+`, `-`, `<`, `>`, `==`) was applied to one or more `_Owned` pointer operands. BSC does not allow arithmetic or comparison operations on `_Owned` pointers because these operations could produce interior pointers that do not represent the start of an allocation. Freeing such an interior pointer would cause undefined behavior. Comparison is also restricted to prevent reliance on pointer identity for owned values.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_typecheck_invalid_owned_binOp]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    int *_Owned q = safe_malloc<int>(43);\n    if (p == q) { /* ... */ }   // error: invalid operands to binary expression (int *_Owned and int *_Owned)\n    free_owned<int>(p);\n    free_owned<int>(q);\n}",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    int *_Owned q = safe_malloc<int>(43);\n    if (*p == *q) { /* ... */ }   // OK: compare values, not pointers\n    free_owned<int>(p);\n    free_owned<int>(q);\n}"
+      },
+      "keywords": [
+        "binOp",
+        "binary",
+        "expression",
+        "invalid",
+        "operands",
+        "owned",
+        "typecheck"
+      ]
+    },
+    {
+      "code": "BSC-E0130",
+      "diagnostic_name": "err_typecheck_invalid_owned_unaOp",
+      "severity": "error",
+      "message_template": "invalid operands to unary expression (%0)",
+      "category": "ownership",
+      "cause": "A unary operator (such as `++`, `--`, or unary `-`) was applied to an `_Owned` pointer. Incrementing or decrementing an `_Owned` pointer would change it to point to an interior location within (or outside) the allocation, making it impossible to correctly free the memory. BSC prohibits any unary operation that would alter the value of an `_Owned` pointer away from the original allocation address.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_typecheck_invalid_owned_unaOp]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    p++;                  // error: invalid operands to unary expression (int *_Owned)\n    free_owned<int>(p);   // would free wrong address\n}",
+        "good_code": "void example(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    int *_Borrow b = &*p;\n    b++;                   // OK: arithmetic on borrow\n    free_owned<int>(p);    // p still points to allocation start\n}"
+      },
+      "keywords": [
+        "expression",
+        "invalid",
+        "operands",
+        "owned",
+        "typecheck",
+        "unaOp",
+        "unary"
+      ]
+    },
+    {
+      "code": "BSC-E0131",
+      "diagnostic_name": "err_typecheck_invalid_owned_arrsub",
+      "severity": "error",
+      "message_template": "_Owned pointer type (%0) do not support ArraySubscript operate",
+      "category": "ownership",
+      "cause": "The array subscript operator (`[]`) was applied to an `_Owned` pointer. In C, `p[i]` is equivalent to `*(p + i)`, which involves pointer arithmetic. Since `_Owned` pointers must always point to the exact start of their allocation, array subscript operations are not allowed on them. This restriction prevents the creation of interior pointers that cannot be correctly freed.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_typecheck_invalid_owned_arrsub]"
+        }
+      ],
+      "example": {
+        "bad_code": "void example(void) {\n    int *_Owned arr = safe_malloc<int>(0);   // allocate array\n    arr[2] = 42;   // error: _Owned pointer type (int *_Owned) do not support ArraySubscript operate\n}",
+        "good_code": "void example(void) {\n    int *_Owned arr = safe_malloc<int>(0);\n    int *_Borrow b = &*arr;\n    b[2] = 42;              // OK: subscript on borrow\n    free_owned<int>(arr);\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "arraysubscript",
+        "arrsub",
+        "invalid",
+        "operate",
+        "owned",
+        "pointer",
+        "support"
+      ]
+    },
+    {
+      "code": "BSC-E0201",
+      "diagnostic_name": "err_borrow_assign_when_borrowed",
+      "severity": "error",
+      "message_template": "cannot assign to `%0` because it is borrowed",
+      "warning_flag": "-Wassign-borrowed",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCBorrow",
+        "AssignBorrowed"
+      ],
+      "category": "borrow",
+      "cause": "You attempted to write to a variable while an outstanding borrow (via a `_Borrow`\npointer) still exists. The borrow guarantees the pointed-to value will not change\nfor the lifetime of the borrow. Assigning through the original name would violate\nthat guarantee and could cause the borrower to observe unexpected mutations.",
+      "fix_strategies": [
+        {
+          "strategy": "end",
+          "description": "End the borrow before assigning by limiting the scope of the borrow pointer."
+        },
+        {
+          "strategy": "restructure",
+          "description": "Restructure code so that the assignment occurs before the borrow is created."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int x = 10;\n    const int *_Borrow bp = &_Const x;  // immutable borrow of x\n    x = 20;          // ERROR: cannot assign to 'x' because it is borrowed\n    printf(\"%d\", *bp);\n}",
+        "good_code": "void f(void) {\n    int x = 10;\n    {\n        const int *_Borrow bp = &_Const x;\n        printf(\"%d\", *bp);\n    }\n    x = 20;  // OK: borrow has ended\n}"
+      },
+      "keywords": [
+        "assign",
+        "borrow",
+        "borrowed",
+        "when"
+      ]
+    },
+    {
+      "code": "BSC-E0202",
+      "diagnostic_name": "err_borrow_move_when_borrowed",
+      "severity": "error",
+      "message_template": "cannot move out of `%0` because it is borrowed",
+      "warning_flag": "-Wmove-borrowed",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCBorrow",
+        "MoveBorrowed"
+      ],
+      "category": "borrow",
+      "cause": "Moving an `_Owned` value transfers ownership and invalidates the source. If any\nborrow exists that points into that value, the move would leave the borrow dangling.\nBSC prohibits moves while any borrow (mutable or immutable) is active on the value.",
+      "fix_strategies": [
+        {
+          "strategy": "end",
+          "description": "End the borrow before the move."
+        },
+        {
+          "strategy": "clone",
+          "description": "Clone / copy the value instead of moving it, if applicable."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    const int *_Borrow bp = &_Const *p;\n    int *_Owned q = p;   // ERROR: cannot move out of 'p' because it is borrowed\n    printf(\"%d\", *bp);\n}",
+        "good_code": "void f(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    {\n        const int *_Borrow bp = &_Const *p;\n        printf(\"%d\", *bp);\n    }\n    int *_Owned q = p;  // OK: borrow has ended\n    free_owned<int>(q);\n}"
+      },
+      "keywords": [
+        "borrow",
+        "borrowed",
+        "move",
+        "when"
+      ]
+    },
+    {
+      "code": "BSC-E0203",
+      "diagnostic_name": "err_borrow_use_when_mut_borrowed",
+      "severity": "error",
+      "message_template": "cannot use `%0` because it was mutably borrowed",
+      "warning_flag": "-Wuse-mutably-borrowed",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCBorrow",
+        "UseMutablyBorrowed"
+      ],
+      "category": "borrow",
+      "cause": "While a mutable borrow is active, the original variable cannot be read through its\noriginal path. A mutable borrow grants exclusive access to the borrower; allowing\nreads through the original name would break this exclusivity and could lead to\nobserving partially updated state.",
+      "fix_strategies": [
+        {
+          "strategy": "read",
+          "description": "Read the value through the mutable borrow pointer instead."
+        },
+        {
+          "strategy": "end",
+          "description": "End the mutable borrow before reading the original variable."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int x = 5;\n    int *_Borrow mp = &_Mut x;  // mutable borrow of x\n    int y = x;       // ERROR: cannot use 'x' because it was mutably borrowed\n    *mp = 10;\n}",
+        "good_code": "void f(void) {\n    int x = 5;\n    int *_Borrow mp = &_Mut x;\n    int y = *mp;     // OK: read through the borrow\n    *mp = 10;\n}"
+      },
+      "keywords": [
+        "borrow",
+        "borrowed",
+        "mut",
+        "mutably",
+        "use",
+        "when"
+      ]
+    },
+    {
+      "code": "BSC-E0204",
+      "diagnostic_name": "err_borrow_mut_borrow_more_than_once",
+      "severity": "error",
+      "message_template": "cannot borrow `%0` as mutable more than once at a time",
+      "warning_flag": "-Wrepeated-borrow",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCBorrow",
+        "RepeatedBorrow"
+      ],
+      "category": "borrow",
+      "cause": "BSC enforces that only one mutable borrow of a given value can exist at any time.\nMultiple mutable borrows would allow aliased mutation, which can cause data races\nin concurrent code and undefined behavior even in single-threaded code.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use a single mutable borrow and pass it to the code that needs it."
+        },
+        {
+          "strategy": "end",
+          "description": "End the first mutable borrow before creating the second."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int x = 1;\n    int *_Borrow m1 = &_Mut x;\n    int *_Borrow m2 = &_Mut x;  // ERROR: cannot borrow 'x' as mutable more than once\n    *m1 = 2;\n    *m2 = 3;\n}",
+        "good_code": "void f(void) {\n    int x = 1;\n    {\n        int *_Borrow m1 = &_Mut x;\n        *m1 = 2;\n    }\n    {\n        int *_Borrow m2 = &_Mut x;\n        *m2 = 3;\n    }\n}"
+      },
+      "keywords": [
+        "borrow",
+        "more",
+        "mut",
+        "mutable",
+        "once",
+        "than"
+      ]
+    },
+    {
+      "code": "BSC-E0205",
+      "diagnostic_name": "err_borrow_immut_borrow_when_mut_borrowed",
+      "severity": "error",
+      "message_template": "cannot borrow `%0` as immutable because it is also borrowed as mutable",
+      "warning_flag": "-Wrepeated-borrow",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCBorrow",
+        "RepeatedBorrow"
+      ],
+      "category": "borrow",
+      "cause": "You cannot create an immutable borrow while a mutable borrow of the same value\nexists. The mutable borrow has exclusive access; an immutable borrow would allow\nobserving the value through a second path, violating exclusivity.",
+      "fix_strategies": [
+        {
+          "strategy": "end",
+          "description": "End the mutable borrow before creating the immutable borrow."
+        },
+        {
+          "strategy": "use",
+          "description": "Use only one kind of borrow at a time."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int x = 1;\n    int *_Borrow mp = &_Mut x;\n    const int *_Borrow bp = &_Const x;  // ERROR: cannot borrow 'x' as immutable\n                                         //        because it is also borrowed as mutable\n    *mp = 2;\n    printf(\"%d\", *bp);\n}",
+        "good_code": "void f(void) {\n    int x = 1;\n    {\n        int *_Borrow mp = &_Mut x;\n        *mp = 2;\n    }\n    const int *_Borrow bp = &_Const x;  // OK: mutable borrow has ended\n    printf(\"%d\", *bp);\n}"
+      },
+      "keywords": [
+        "borrow",
+        "borrowed",
+        "immut",
+        "immutable",
+        "mut",
+        "mutable",
+        "when"
+      ]
+    },
+    {
+      "code": "BSC-E0206",
+      "diagnostic_name": "err_borrow_mut_borrow_when_immut_borrowed",
+      "severity": "error",
+      "message_template": "cannot borrow `%0` as mutable because it is also borrowed as immutable",
+      "warning_flag": "-Wrepeated-borrow",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCBorrow",
+        "RepeatedBorrow"
+      ],
+      "category": "borrow",
+      "cause": "You cannot create a mutable borrow while one or more immutable borrows of the same\nvalue are still active. Immutable borrowers expect the value to remain unchanged;\na mutable borrow could modify it and break that expectation.",
+      "fix_strategies": [
+        {
+          "strategy": "end",
+          "description": "End all immutable borrows before creating a mutable borrow."
+        },
+        {
+          "strategy": "restructure",
+          "description": "Restructure code to separate read and write phases."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int x = 1;\n    const int *_Borrow bp = &_Const x;\n    int *_Borrow mp = &_Mut x;  // ERROR: cannot borrow 'x' as mutable\n                                 //        because it is also borrowed as immutable\n    *mp = 2;\n    printf(\"%d\", *bp);\n}",
+        "good_code": "void f(void) {\n    int x = 1;\n    {\n        const int *_Borrow bp = &_Const x;\n        printf(\"%d\", *bp);\n    }\n    int *_Borrow mp = &_Mut x;  // OK: immutable borrow has ended\n    *mp = 2;\n}"
+      },
+      "keywords": [
+        "borrow",
+        "borrowed",
+        "immut",
+        "immutable",
+        "mut",
+        "mutable",
+        "when"
+      ]
+    },
+    {
+      "code": "BSC-E0207",
+      "diagnostic_name": "err_borrow_return_local_borrow",
+      "severity": "error",
+      "message_template": "cannot return reference to local variable `%0`",
+      "warning_flag": "-Wreturn-local-borrow",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCBorrow",
+        "ReturnLocalBorrow"
+      ],
+      "category": "borrow",
+      "cause": "Local variables are destroyed when the function returns. Returning a `_Borrow`\npointer to a local variable would create a dangling pointer: the caller would\nreceive a reference to memory that is no longer valid. BSC detects this at compile\ntime and rejects it.",
+      "fix_strategies": [
+        {
+          "strategy": "return",
+          "description": "Return an `_Owned` pointer to heap-allocated memory instead."
+        },
+        {
+          "strategy": "pass",
+          "description": "Pass the result through an output parameter that the caller owns."
+        },
+        {
+          "strategy": "return",
+          "description": "Return the value by copy (non-pointer) when possible."
+        }
+      ],
+      "example": {
+        "bad_code": "const int *_Borrow bad(void) {\n    int x = 42;\n    return &_Const x;  // ERROR: cannot return reference to local variable 'x'\n}",
+        "good_code": "int *_Owned good_heap(void) {\n    int *_Owned p = safe_malloc<int>(42);\n    return p;  // OK: ownership transferred to caller\n}\n\nint good_copy(void) {\n    int x = 42;\n    return x;  // OK: returned by value\n}"
+      },
+      "keywords": [
+        "borrow",
+        "local",
+        "reference",
+        "return",
+        "variable"
+      ]
+    },
+    {
+      "code": "BSC-E0208",
+      "diagnostic_name": "err_borrow_not_live_long",
+      "severity": "error",
+      "message_template": "`%0` does not live long enough",
+      "warning_flag": "-Wshort-life-borrow",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCBorrow",
+        "ShortLifeBorrow"
+      ],
+      "category": "borrow",
+      "cause": "The borrowed value goes out of scope while the borrow is still active. The borrow\npointer would become dangling because the value it references has been destroyed.\nThis commonly happens when an inner-scope variable is borrowed and the borrow\nescapes to an outer scope.",
+      "fix_strategies": [
+        {
+          "strategy": "extend",
+          "description": "Extend the lifetime of the borrowed variable so it outlives the borrow."
+        },
+        {
+          "strategy": "move",
+          "description": "Move the borrow usage into the same scope as the variable."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    const int *_Borrow bp;\n    {\n        int x = 10;\n        bp = &_Const x;  // ERROR: 'x' does not live long enough\n    }\n    // x is destroyed here, but bp still references it\n    printf(\"%d\", *bp);\n}",
+        "good_code": "void f(void) {\n    int x = 10;\n    const int *_Borrow bp = &_Const x;\n    printf(\"%d\", *bp);  // OK: x is still alive\n}"
+      },
+      "keywords": [
+        "borrow",
+        "enough",
+        "live",
+        "long",
+        "not"
+      ]
+    },
+    {
+      "code": "BSC-E0209",
+      "diagnostic_name": "err_borrow_live_longer_than_target_var",
+      "severity": "error",
+      "message_template": "borrow pointer variable '%0' lives longer than target variable",
+      "category": "borrow",
+      "cause": "The `_Borrow` pointer variable has a lifetime that extends beyond the lifetime of\nthe variable it borrows from. When the target variable is destroyed, the borrow\npointer becomes dangling. This is the legacy checker's equivalent of BSC-E0208.",
+      "fix_strategies": [
+        {
+          "strategy": "ensure",
+          "description": "Ensure the target variable's scope encloses the borrow pointer's scope."
+        },
+        {
+          "strategy": "declare",
+          "description": "Declare the target variable in the same or an outer scope."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    const int *_Borrow bp;\n    {\n        int val = 100;\n        bp = &_Const val;\n    }\n    // ERROR: borrow pointer variable 'bp' lives longer than target variable\n    printf(\"%d\", *bp);\n}",
+        "good_code": "void f(void) {\n    int val = 100;\n    const int *_Borrow bp = &_Const val;\n    printf(\"%d\", *bp);  // OK: val outlives bp\n}"
+      },
+      "keywords": [
+        "borrow",
+        "live",
+        "lives",
+        "longer",
+        "pointer",
+        "target",
+        "than",
+        "var"
+      ]
+    },
+    {
+      "code": "BSC-E0210",
+      "diagnostic_name": "err_at_most_one_mut_borrow",
+      "severity": "error",
+      "message_template": "There should be at most one mutable borrow targeting to '%0' at the same time",
+      "category": "borrow",
+      "cause": "This is the legacy checker's version of BSC-E0204. Two or more mutable `_Borrow`\npointers targeting the same variable exist simultaneously, which violates the\nexclusivity rule for mutable borrows.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use only one mutable borrow at a time; end the first before creating the second."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int x = 5;\n    int *_Borrow a = &_Mut x;\n    int *_Borrow b = &_Mut x;\n    // ERROR: There should be at most one mutable borrow targeting to 'x'\n    //        at the same time\n    *a = 1;\n    *b = 2;\n}",
+        "good_code": "void f(void) {\n    int x = 5;\n    {\n        int *_Borrow a = &_Mut x;\n        *a = 1;\n    }\n    int *_Borrow b = &_Mut x;  // OK: previous borrow ended\n    *b = 2;\n}"
+      },
+      "keywords": [
+        "borrow",
+        "most",
+        "mut",
+        "mutable",
+        "one",
+        "should",
+        "targeting",
+        "there"
+      ]
+    },
+    {
+      "code": "BSC-E0211",
+      "diagnostic_name": "err_return_value_borrow_local",
+      "severity": "error",
+      "message_template": "Return value cannot be a borrow from local variable '%0'",
+      "category": "borrow",
+      "cause": "This is the legacy checker's version of BSC-E0207. The function returns a `_Borrow`\npointer that references a local variable. Once the function returns, the local is\ndestroyed and the returned pointer is dangling.",
+      "fix_strategies": [
+        {
+          "strategy": "return",
+          "description": "Return an `_Owned` pointer to heap-allocated memory."
+        },
+        {
+          "strategy": "return",
+          "description": "Return by value instead of by reference."
+        }
+      ],
+      "example": {
+        "bad_code": "int *_Borrow bad(void) {\n    int local = 99;\n    return &_Mut local;\n    // ERROR: Return value cannot be a borrow from local variable 'local'\n}",
+        "good_code": "int *_Owned good(void) {\n    int *_Owned p = safe_malloc<int>(99);\n    return p;  // OK: ownership transferred\n}"
+      },
+      "keywords": [
+        "borrow",
+        "local",
+        "return",
+        "value",
+        "variable"
+      ]
+    },
+    {
+      "code": "BSC-E0212",
+      "diagnostic_name": "err_modify_after_be_borrow",
+      "severity": "error",
+      "message_template": "Can not modify '%0' because be borrowed",
+      "category": "borrow",
+      "cause": "This is the legacy checker's version of BSC-E0201. You attempted to modify a\nvariable while it is borrowed. The borrow guarantees the value will remain stable\nfor the duration of the borrow.",
+      "fix_strategies": [
+        {
+          "strategy": "end",
+          "description": "End the borrow before modifying the variable."
+        },
+        {
+          "strategy": "move",
+          "description": "Move the modification before the borrow is created."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int x = 10;\n    const int *_Borrow bp = &_Const x;\n    x = 20;  // ERROR: Can not modify 'x' because be borrowed\n    printf(\"%d\", *bp);\n}",
+        "good_code": "void f(void) {\n    int x = 10;\n    {\n        const int *_Borrow bp = &_Const x;\n        printf(\"%d\", *bp);\n    }\n    x = 20;  // OK: borrow has ended\n}"
+      },
+      "keywords": [
+        "after",
+        "borrow",
+        "borrowed",
+        "modify"
+      ]
+    },
+    {
+      "code": "BSC-E0213",
+      "diagnostic_name": "err_read_after_be_mut_borrow",
+      "severity": "error",
+      "message_template": "Can not read '%0' because be mut borrowed",
+      "category": "borrow",
+      "cause": "This is the legacy checker's version of BSC-E0203. While a mutable borrow is\nactive, reads through the original variable name are forbidden because the mutable\nborrow has exclusive access.",
+      "fix_strategies": [
+        {
+          "strategy": "read",
+          "description": "Read through the mutable borrow pointer instead of the original variable."
+        },
+        {
+          "strategy": "end",
+          "description": "End the mutable borrow before reading the original variable."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int x = 7;\n    int *_Borrow mp = &_Mut x;\n    int val = x;  // ERROR: Can not read 'x' because be mut borrowed\n    *mp = 10;\n}",
+        "good_code": "void f(void) {\n    int x = 7;\n    int *_Borrow mp = &_Mut x;\n    int val = *mp;  // OK: reading through the borrow\n    *mp = 10;\n}"
+      },
+      "keywords": [
+        "after",
+        "borrow",
+        "borrowed",
+        "mut",
+        "read"
+      ]
+    },
+    {
+      "code": "BSC-E0214",
+      "diagnostic_name": "err_use_expired_borrow_var",
+      "severity": "error",
+      "message_template": "Can not use '%0' because expired",
+      "warning_flag": "-Wassign-borrowed",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCBorrow",
+        "AssignBorrowed"
+      ],
+      "category": "borrow",
+      "cause": "The `_Borrow` pointer has expired -- the value it was borrowing from has gone out\nof scope or has been moved. Using an expired borrow is equivalent to dereferencing\na dangling pointer, so BSC rejects it at compile time.",
+      "fix_strategies": [
+        {
+          "strategy": "ensure",
+          "description": "Ensure the borrowed value outlives the borrow pointer."
+        },
+        {
+          "strategy": "restructure",
+          "description": "Restructure scopes so the borrow is used while the target is still alive."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    const int *_Borrow bp;\n    {\n        int x = 42;\n        bp = &_Const x;\n    }\n    printf(\"%d\", *bp);  // ERROR: Can not use 'bp' because expired\n}",
+        "good_code": "void f(void) {\n    int x = 42;\n    const int *_Borrow bp = &_Const x;\n    printf(\"%d\", *bp);  // OK: x is still in scope\n}"
+      },
+      "keywords": [
+        "borrow",
+        "expired",
+        "use",
+        "var"
+      ]
+    },
+    {
+      "code": "BSC-E0215",
+      "diagnostic_name": "err_borrow_on_borrow",
+      "severity": "error",
+      "message_template": "%0 on a '_Borrow' qualified type is not allowed",
+      "category": "borrow",
+      "cause": "Certain qualifiers or operations cannot be applied to a type that is already\n`_Borrow` qualified. For instance, applying `_Owned` on top of `_Borrow` is\ncontradictory: a pointer is either owning or borrowing, not both.",
+      "fix_strategies": [
+        {
+          "strategy": "remove",
+          "description": "Remove the conflicting qualifier. Decide whether the pointer should be `_Owned` or `_Borrow`."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(int *_Borrow bp) {\n    int *_Owned _Borrow p = bp;\n    // ERROR: _Owned on a '_Borrow' qualified type is not allowed\n}",
+        "good_code": "void f(int *_Borrow bp) {\n    int *_Borrow p = bp;  // OK: just _Borrow\n}"
+      },
+      "keywords": [
+        "_Borrow",
+        "allowed",
+        "borrow",
+        "qualified"
+      ]
+    },
+    {
+      "code": "BSC-E0216",
+      "diagnostic_name": "err_move_borrow",
+      "severity": "error",
+      "message_template": "_Borrow type does not allow move ownership",
+      "category": "borrow",
+      "cause": "`_Borrow` pointers do not own the data they point to. You cannot transfer ownership\nof a `_Borrow` pointer because there is no ownership to transfer. Only `_Owned`\npointers can be moved.",
+      "fix_strategies": [
+        {
+          "strategy": "pass",
+          "description": "Pass the borrow as a `_Borrow` parameter instead of an `_Owned` parameter."
+        },
+        {
+          "strategy": "if",
+          "description": "If ownership transfer is needed, use an `_Owned` pointer from the start."
+        }
+      ],
+      "example": {
+        "bad_code": "void consume(int *_Owned p) {\n    free_owned<int>(p);\n}\n\nvoid f(void) {\n    int x = 10;\n    int *_Borrow bp = &_Mut x;\n    consume(bp);  // ERROR: _Borrow type does not allow move ownership\n}",
+        "good_code": "void use_val(int *_Borrow p) {\n    printf(\"%d\", *p);\n}\n\nvoid f(void) {\n    int x = 10;\n    int *_Borrow bp = &_Mut x;\n    use_val(bp);  // OK: passing a borrow as a borrow\n}"
+      },
+      "keywords": [
+        "_Borrow",
+        "allow",
+        "borrow",
+        "move",
+        "ownership"
+      ]
+    },
+    {
+      "code": "BSC-E0217",
+      "diagnostic_name": "err_borrow_qualcheck_incompatible",
+      "severity": "error",
+      "message_template": "incompatible borrow types, cannot cast %0 to %1",
+      "category": "borrow",
+      "cause": "You attempted to cast between pointer types whose `_Borrow` qualifications are\nincompatible. BSC tracks borrow qualifiers as part of the type system and does\nnot allow implicit or explicit casts that would violate borrow safety.",
+      "fix_strategies": [
+        {
+          "strategy": "avoid",
+          "description": "Avoid casting between `_Borrow` and `_Owned` types."
+        },
+        {
+          "strategy": "redesign",
+          "description": "Redesign the code to use the correct qualifier from the start."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int x = 10;\n    const int *_Borrow bp = &_Const x;\n    int *_Owned op = (int *_Owned)bp;\n    // ERROR: incompatible borrow types, cannot cast 'const int *_Borrow' to 'int *_Owned'\n}",
+        "good_code": "void f(void) {\n    int *_Owned op = safe_malloc<int>(10);\n    // work with op as _Owned directly\n    free_owned<int>(op);\n}"
+      },
+      "keywords": [
+        "borrow",
+        "incompatible",
+        "qualcheck",
+        "types"
+      ]
+    },
+    {
+      "code": "BSC-E0218",
+      "diagnostic_name": "err_borrow_qualcheck_compare",
+      "severity": "error",
+      "message_template": "incompatible borrow types, %0 and %1 cannot be compared",
+      "category": "borrow",
+      "cause": "You attempted to compare two pointers whose `_Borrow` qualifications are\nincompatible. BSC disallows comparisons between pointers with mismatched borrow\nqualifiers because such comparisons are semantically meaningless and usually\nindicate a logic error.",
+      "fix_strategies": [
+        {
+          "strategy": "compare",
+          "description": "Compare pointers of the same borrow qualification."
+        },
+        {
+          "strategy": "reconsider",
+          "description": "Reconsider whether the comparison is logically correct."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int x = 10;\n    int *_Owned op = safe_malloc<int>(10);\n    int *_Borrow bp = &_Mut x;\n    if (op == bp) { }\n    // ERROR: incompatible borrow types, 'int *_Owned' and 'int *_Borrow' cannot be compared\n    free_owned<int>(op);\n}",
+        "good_code": "void f(void) {\n    int x = 10;\n    int y = 20;\n    int *_Borrow bp1 = &_Mut x;\n    int *_Borrow bp2 = &_Mut y;\n    if (bp1 == bp2) { }  // OK: same qualifier\n}"
+      },
+      "keywords": [
+        "borrow",
+        "compare",
+        "compared",
+        "incompatible",
+        "qualcheck",
+        "types"
+      ]
+    },
+    {
+      "code": "BSC-E0219",
+      "diagnostic_name": "err_typecheck_invalid_borrow_not_pointer",
+      "severity": "error",
+      "message_template": "_Borrow type requires a pointer or reference (%0 is invalid)",
+      "category": "borrow",
+      "cause": "The `_Borrow` qualifier can only be applied to pointer types. Applying `_Borrow` to\na non-pointer type such as `int` or a struct value is invalid because borrowing is\na concept that applies to indirection -- a borrow is a reference to data owned\nelsewhere.",
+      "fix_strategies": [
+        {
+          "strategy": "apply",
+          "description": "Apply `_Borrow` only to pointer types."
+        },
+        {
+          "strategy": "if",
+          "description": "If you need a non-owning reference, use a pointer."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int _Borrow x = 10;\n    // ERROR: _Borrow type requires a pointer or reference ('int _Borrow' is invalid)\n}",
+        "good_code": "void f(void) {\n    int val = 10;\n    int *_Borrow bp = &_Const val;  // OK: _Borrow on a pointer type\n}"
+      },
+      "keywords": [
+        "_Borrow",
+        "borrow",
+        "invalid",
+        "not",
+        "pointer",
+        "reference",
+        "requires",
+        "typecheck"
+      ]
+    },
+    {
+      "code": "BSC-E0220",
+      "diagnostic_name": "err_typecheck_borrow_func",
+      "severity": "error",
+      "message_template": "no _Borrow qualified type found in the function parameters, the return type is not allowed to be _Borrow qualified",
+      "category": "borrow",
+      "cause": "A function that returns a `_Borrow` pointer must receive at least one `_Borrow`\nparameter, because the returned borrow must refer to data that outlives the\nfunction call. If no parameter is `_Borrow` qualified, the only possible source\nfor the returned borrow would be a local variable, which is always invalid.",
+      "fix_strategies": [
+        {
+          "strategy": "add",
+          "description": "Add a `_Borrow` parameter that the return value can borrow from."
+        },
+        {
+          "strategy": "change",
+          "description": "Change the return type to `_Owned` and transfer ownership instead."
+        }
+      ],
+      "example": {
+        "bad_code": "int *_Borrow bad(int *_Owned p) {\n    // ERROR: no _Borrow qualified type found in the function parameters,\n    //        the return type is not allowed to be _Borrow qualified\n    return &_Const *p;\n}",
+        "good_code": "int *_Borrow good(int *_Borrow p) {\n    return p;  // OK: returned borrow comes from a _Borrow parameter\n}"
+      },
+      "keywords": [
+        "_Borrow",
+        "allowed",
+        "borrow",
+        "func",
+        "function",
+        "parameters",
+        "qualified",
+        "return"
+      ]
+    },
+    {
+      "code": "BSC-E0221",
+      "diagnostic_name": "err_typecheck_borrow_subscript",
+      "severity": "error",
+      "message_template": "subscript of _Borrow pointer is not allowed",
+      "category": "borrow",
+      "cause": "`_Borrow` pointers represent a borrow of a single value, not an array. Array\nsubscript operations (`bp[i]`) on a `_Borrow` pointer are disallowed because BSC\ncannot verify that the subscript stays within the bounds of valid memory. This\nprevents out-of-bounds access through borrowed pointers.",
+      "fix_strategies": [
+        {
+          "strategy": "access",
+          "description": "Access the value through simple dereference (`*bp`) instead of subscript."
+        },
+        {
+          "strategy": "if",
+          "description": "If array access is needed, use a different pointer type with appropriate bounds guarantees."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(int *_Borrow bp) {\n    int val = bp[1];  // ERROR: subscript of _Borrow pointer is not allowed\n}",
+        "good_code": "void f(int *_Borrow bp) {\n    int val = *bp;  // OK: single-value dereference\n}"
+      },
+      "keywords": [
+        "_Borrow",
+        "allowed",
+        "borrow",
+        "pointer",
+        "subscript",
+        "typecheck"
+      ]
+    },
+    {
+      "code": "BSC-E0222",
+      "diagnostic_name": "err_funcPtr_incompatible",
+      "severity": "error",
+      "message_template": "incompatible _Borrow function pointer types, cannot cast %0 to %1",
+      "category": "borrow",
+      "cause": "You attempted to cast between function pointer types that have different `_Borrow`\nqualifications on their parameters or return types. BSC prevents this because\nchanging the borrow qualifier on a function pointer could lead to incorrect\nlifetime tracking when the function is called through the cast pointer.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use function pointers with matching `_Borrow` qualifications."
+        },
+        {
+          "strategy": "wrap",
+          "description": "Wrap the call in a new function with the correct signature."
+        }
+      ],
+      "example": {
+        "bad_code": "typedef int *_Borrow (*fn_borrow)(int *_Borrow);\ntypedef int *_Owned (*fn_owned)(int *_Owned);\n\nvoid f(void) {\n    fn_borrow fb = some_func;\n    fn_owned fo = (fn_owned)fb;\n    // ERROR: incompatible _Borrow function pointer types, cannot cast\n    //        'fn_borrow' to 'fn_owned'\n}",
+        "good_code": "typedef int *_Borrow (*fn_borrow)(int *_Borrow);\n\nvoid f(fn_borrow fb) {\n    int x = 10;\n    int *_Borrow bp = &_Mut x;\n    int *_Borrow result = fb(bp);  // OK: types match\n}"
+      },
+      "keywords": [
+        "_Borrow",
+        "funcPtr",
+        "function",
+        "incompatible",
+        "pointer",
+        "types"
+      ]
+    },
+    {
+      "code": "BSC-E0223",
+      "diagnostic_name": "err_borrow_not_init",
+      "severity": "error",
+      "message_template": "variable declarations of _Borrow qualified must be initialized",
+      "category": "borrow",
+      "cause": "A `_Borrow` pointer must always refer to valid data. An uninitialized `_Borrow`\nvariable would be a dangling reference from the start. BSC requires that every\n`_Borrow` variable is initialized at the point of declaration to ensure it\nimmediately references valid memory.",
+      "fix_strategies": [
+        {
+          "strategy": "initialize",
+          "description": "Initialize the `_Borrow` variable at declaration."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    int *_Borrow bp;  // ERROR: variable declarations of _Borrow qualified must be initialized\n    int x = 10;\n    bp = &_Const x;\n}",
+        "good_code": "void f(void) {\n    int x = 10;\n    int *_Borrow bp = &_Const x;  // OK: initialized at declaration\n}"
+      },
+      "keywords": [
+        "_Borrow",
+        "borrow",
+        "declarations",
+        "init",
+        "initialized",
+        "not",
+        "qualified",
+        "variable"
+      ]
+    },
+    {
+      "code": "BSC-E0224",
+      "diagnostic_name": "err_mut_expr_unmodifiable",
+      "severity": "error",
+      "message_template": "the expression after '&_Mut' must be modifiable",
+      "category": "borrow",
+      "cause": "The `&_Mut` operator creates a mutable borrow, which allows writing to the\nreferenced value. The target expression must therefore be a modifiable lvalue.\nTaking a mutable borrow of a `const` variable, a literal, or any other\nnon-modifiable expression is invalid.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use `&_Const` if you only need to read the value."
+        },
+        {
+          "strategy": "remove",
+          "description": "Remove the `const` qualifier if the variable should be mutable."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(const int x) {\n    int *_Borrow mp = &_Mut x;\n    // ERROR: the expression after '&_Mut' must be modifiable\n}",
+        "good_code": "void f(int x) {\n    int *_Borrow mp = &_Mut x;  // OK: x is modifiable\n    *mp = 42;\n}"
+      },
+      "keywords": [
+        "_Mut",
+        "after",
+        "expr",
+        "expression",
+        "modifiable",
+        "mut",
+        "unmodifiable"
+      ]
+    },
+    {
+      "code": "BSC-E0225",
+      "diagnostic_name": "err_mut_expr_func",
+      "severity": "error",
+      "message_template": "'&_Mut' for function pointer is not allowed",
+      "category": "borrow",
+      "cause": "Function pointers refer to code, not data. Taking a mutable borrow of a function\npointer with `&_Mut` is meaningless because you cannot mutate a function's code\nthrough a borrow. BSC prohibits this to prevent confusion and misuse.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use `&_Const` if you need a reference to the function pointer for reading."
+        },
+        {
+          "strategy": "pass",
+          "description": "Pass the function pointer by value instead."
+        }
+      ],
+      "example": {
+        "bad_code": "void my_func(void) { }\n\nvoid f(void) {\n    void (*fp)(void) = my_func;\n    void (**_Borrow mp)(void) = &_Mut fp;\n    // ERROR: '&_Mut' for function pointer is not allowed\n}",
+        "good_code": "void my_func(void) { }\n\nvoid call_it(void (*fn)(void)) {\n    fn();  // OK: passed by value\n}\n\nvoid f(void) {\n    call_it(my_func);\n}"
+      },
+      "keywords": [
+        "_Mut",
+        "allowed",
+        "expr",
+        "func",
+        "function",
+        "mut",
+        "pointer"
+      ]
+    },
+    {
+      "code": "BSC-E0226",
+      "diagnostic_name": "err_safe_mut",
+      "severity": "error",
+      "message_template": "global or static variables are not allowed to be mutably borrowed within the safe zone",
+      "category": "borrow",
+      "cause": "Within a `_Safe` function or `_Safe` block, mutable borrows of global or static\nvariables are prohibited. Global and static variables can be accessed from multiple\nthreads or re-entrant calls; allowing mutable borrows in safe code would undermine\nthe data-race prevention that safe zones provide.",
+      "fix_strategies": [
+        {
+          "strategy": "move",
+          "description": "Move the operation outside the safe zone."
+        },
+        {
+          "strategy": "use",
+          "description": "Use atomic operations or synchronization primitives for thread-safe mutation."
+        },
+        {
+          "strategy": "redesign",
+          "description": "Redesign the code to avoid mutable global state in safe contexts."
+        }
+      ],
+      "example": {
+        "bad_code": "int global_counter = 0;\n\n_Safe void increment(void) {\n    int *_Borrow mp = &_Mut global_counter;\n    // ERROR: global or static variables are not allowed to be mutably\n    //        borrowed within the safe zone\n    *mp += 1;\n}",
+        "good_code": "void increment(int *_Borrow counter) {\n    *counter += 1;  // OK: borrowing a parameter, not a global\n}"
+      },
+      "keywords": [
+        "allowed",
+        "borrowed",
+        "global",
+        "mut",
+        "mutably",
+        "safe",
+        "static",
+        "variables"
+      ]
+    },
+    {
+      "code": "BSC-E0227",
+      "diagnostic_name": "err_mut_borrow_string_literal",
+      "severity": "error",
+      "message_template": "cannot take mutable borrow of string literal with '&_Mut'; string literals are immutable",
+      "category": "borrow",
+      "cause": "String literals are stored in read-only memory and are inherently immutable. Taking\na mutable borrow with `&_Mut` on a string literal would imply the ability to\nmodify the string contents, which is undefined behavior. BSC rejects this at\ncompile time.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use `&_Const` for an immutable borrow of the string literal."
+        },
+        {
+          "strategy": "copy",
+          "description": "Copy the string into a mutable buffer if modification is needed."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    char *_Borrow mp = &_Mut \"hello\";\n    // ERROR: cannot take mutable borrow of string literal with '&_Mut';\n    //        string literals are immutable\n}",
+        "good_code": "void f(void) {\n    const char *_Borrow bp = &_Const \"hello\";  // OK: immutable borrow\n\n    char buf[] = \"hello\";\n    char *_Borrow mp = &_Mut buf[0];  // OK: mutable borrow of a mutable array\n}"
+      },
+      "keywords": [
+        "_Mut",
+        "borrow",
+        "immutable",
+        "literal",
+        "literals",
+        "mut",
+        "mutable",
+        "string"
+      ]
+    },
+    {
+      "code": "BSC-E0228",
+      "diagnostic_name": "err_mut_borrow_string_literal_indirect",
+      "severity": "error",
+      "message_template": "cannot take mutable borrow through string literal with '&_Mut *'; string literals are immutable",
+      "category": "borrow",
+      "cause": "Even when dereferencing a string literal pointer and then taking a mutable borrow\n(`&_Mut *`), BSC still detects that the underlying data is a string literal and\nrejects the operation. String literals are immutable regardless of how they are\naccessed.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use `&_Const` for an immutable borrow."
+        },
+        {
+          "strategy": "copy",
+          "description": "Copy the string into a mutable buffer first."
+        }
+      ],
+      "example": {
+        "bad_code": "void f(void) {\n    const char *s = \"hello\";\n    char *_Borrow mp = &_Mut *s;\n    // ERROR: cannot take mutable borrow through string literal with '&_Mut *';\n    //        string literals are immutable\n}",
+        "good_code": "void f(void) {\n    char buf[] = \"hello\";\n    char *_Borrow mp = &_Mut buf[0];  // OK: mutable borrow of a mutable copy\n}"
+      },
+      "keywords": [
+        "_Mut",
+        "borrow",
+        "immutable",
+        "indirect",
+        "literal",
+        "literals",
+        "mut",
+        "mutable"
+      ]
+    },
+    {
+      "code": "BSC-E0229",
+      "diagnostic_name": "err_pass_string_literal_to_mut_borrow",
+      "severity": "error",
+      "message_template": "cannot pass string literal to parameter of type %0; string literals are immutable",
+      "category": "borrow",
+      "cause": "A function parameter expects a mutable `_Borrow` pointer, but you passed a string\nliteral. Since string literals are immutable, they cannot satisfy a mutable borrow\nrequirement. BSC catches this at the call site to prevent the function from\nattempting to modify read-only memory.",
+      "fix_strategies": [
+        {
+          "strategy": "copy",
+          "description": "Copy the string literal into a mutable buffer and pass that instead."
+        },
+        {
+          "strategy": "change",
+          "description": "Change the function signature to accept `const char *_Borrow` if it does not need mutation."
+        }
+      ],
+      "example": {
+        "bad_code": "void modify(char *_Borrow mp) {\n    *mp = 'H';\n}\n\nvoid f(void) {\n    modify(\"hello\");\n    // ERROR: cannot pass string literal to parameter of type 'char *_Borrow';\n    //        string literals are immutable\n}",
+        "good_code": "void modify(char *_Borrow mp) {\n    *mp = 'H';\n}\n\nvoid f(void) {\n    char buf[] = \"hello\";\n    modify(&_Mut buf[0]);  // OK: mutable buffer\n}"
+      },
+      "keywords": [
+        "borrow",
+        "immutable",
+        "literal",
+        "literals",
+        "mut",
+        "parameter",
+        "pass",
+        "string"
+      ]
+    },
+    {
+      "code": "BSC-E0301",
+      "diagnostic_name": "err_unsafe_action",
+      "severity": "error",
+      "message_template": "%0 is forbidden in the safe zone",
+      "category": "safe_zone",
+      "cause": "You performed an operation that BSC considers unsafe inside a `_Safe` function or block. Unsafe operations include raw pointer arithmetic, calling functions not marked `_Safe`, and certain type punning operations. These operations must be moved to an `_Unsafe` block.",
+      "fix_strategies": [
+        {
+          "strategy": "wrap",
+          "description": "Wrap the unsafe operation in an `_Unsafe { }` block"
+        },
+        {
+          "strategy": "refactor",
+          "description": "Refactor to use safe alternatives"
+        }
+      ],
+      "example": {
+        "bad_code": "_Safe void f(int *p) {\n    p++;  // ERROR: pointer arithmetic is forbidden in the safe zone\n}",
+        "good_code": "_Safe void f_fixed(int *p) {\n    _Unsafe {\n        p++;  // OK: explicitly marked as unsafe\n    }\n}"
+      },
+      "keywords": [
+        "action",
+        "forbidden",
+        "unsafe"
+      ]
+    },
+    {
+      "code": "BSC-E0302",
+      "diagnostic_name": "err_safe_zone_decl",
+      "severity": "error",
+      "message_template": "%select{|'_Safe'|'_Unsafe'}0 can only appear before on function or statement or parenthesized expression",
+      "category": "safe_zone",
+      "cause": "You placed `_Safe` or `_Unsafe` in a syntactically invalid position. These qualifiers can only appear on function declarations, before statements (as block qualifiers), or on parenthesized expressions.",
+      "fix_strategies": [
+        {
+          "strategy": "move",
+          "description": "Move the qualifier to a valid position (function declaration or block statement)"
+        }
+      ],
+      "example": {
+        "bad_code": "int _Safe x = 5;  // ERROR: _Safe can only appear on function or statement",
+        "good_code": "_Safe void f() {   // OK: on function declaration\n    // ...\n}\nvoid g() {\n    _Safe { /* ... */ }  // OK: on block statement\n}"
+      },
+      "keywords": [
+        "_Safe",
+        "_Unsafe",
+        "appear",
+        "before",
+        "decl",
+        "expression",
+        "function",
+        "parenthesized"
+      ]
+    },
+    {
+      "code": "BSC-E0303",
+      "diagnostic_name": "err_union_member_access_in_safe_zone",
+      "severity": "error",
+      "message_template": "access to union field is _Unsafe and requires _Unsafe block",
+      "category": "safe_zone",
+      "cause": "Accessing a union member is inherently unsafe because unions allow type punning — reading a member that wasn't the last one written is undefined behavior. BSC requires union field access to be wrapped in an `_Unsafe` block.",
+      "fix_strategies": [
+        {
+          "strategy": "wrap",
+          "description": "Wrap the union access in an `_Unsafe` block"
+        }
+      ],
+      "example": {
+        "bad_code": "union Data { int i; float f; };\n\n_Safe void f(union Data *d) {\n    int x = d->i;  // ERROR: access to union field is _Unsafe\n}",
+        "good_code": "_Safe void f_fixed(union Data *d) {\n    int x;\n    _Unsafe { x = d->i; }  // OK\n}"
+      },
+      "keywords": [
+        "_Unsafe",
+        "access",
+        "block",
+        "field",
+        "member",
+        "requires",
+        "safe",
+        "union"
+      ]
+    },
+    {
+      "code": "BSC-E0304",
+      "diagnostic_name": "err_unsafe_cast",
+      "severity": "error",
+      "message_template": "conversion from type %0 to %1 is forbidden in the safe zone",
+      "category": "safe_zone",
+      "cause": "You performed an explicit type cast that BSC considers unsafe inside a safe zone. This includes casts between incompatible pointer types, pointer-to-integer casts, and other conversions that could violate type safety or memory safety.",
+      "fix_strategies": [
+        {
+          "strategy": "wrap",
+          "description": "Wrap the cast in an `_Unsafe` block"
+        },
+        {
+          "strategy": "use",
+          "description": "Use a safer alternative (e.g., pass the correct pointer type)"
+        }
+      ],
+      "example": {
+        "bad_code": "_Safe void f(void *p) {\n    int *q = (int *)p;  // ERROR: conversion forbidden in safe zone\n}",
+        "good_code": "_Safe void f_fixed(void *p) {\n    int *q;\n    _Unsafe { q = (int *)p; }\n}"
+      },
+      "keywords": [
+        "cast",
+        "conversion",
+        "forbidden",
+        "unsafe"
+      ]
+    },
+    {
+      "code": "BSC-E0305",
+      "diagnostic_name": "err_unsafe_implicit_cast",
+      "severity": "error",
+      "message_template": "implicit conversion from type %0 to %1 is forbidden in the safe zone; please use explicit cast or other means instead",
+      "category": "safe_zone",
+      "cause": "An implicit type conversion that BSC considers unsafe occurred in a safe zone. Unlike BSC-E0304, this happens without an explicit cast — the compiler would normally perform the conversion silently, but BSC flags it because the conversion could violate safety guarantees.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use an explicit cast inside an `_Unsafe` block"
+        },
+        {
+          "strategy": "change",
+          "description": "Change the function signature to accept the correct type"
+        }
+      ],
+      "example": {
+        "bad_code": "_Safe void f(int *p, void (*callback)(void *)) {\n    callback(p);  // ERROR: implicit conversion from int* to void* is forbidden\n}",
+        "good_code": "_Safe void f_fixed(int *p, void (*callback)(void *)) {\n    _Unsafe { callback((void *)p); }\n}"
+      },
+      "keywords": [
+        "cast",
+        "conversion",
+        "explicit",
+        "forbidden",
+        "implicit",
+        "instead",
+        "means",
+        "other"
+      ]
+    },
+    {
+      "code": "BSC-E0306",
+      "diagnostic_name": "err_unsafe_fun_cast",
+      "severity": "error",
+      "message_template": "conversion from type %0 to %1 is forbidden",
+      "category": "safe_zone",
+      "cause": "You attempted to convert between incompatible function pointer types. This is dangerous because calling a function through a pointer with the wrong signature is undefined behavior. BSC blocks this even when not explicitly in a safe zone for function pointer assignments.",
+      "fix_strategies": [
+        {
+          "strategy": "ensure",
+          "description": "Ensure function pointer types match exactly"
+        },
+        {
+          "strategy": "wrap",
+          "description": "Wrap in `_Unsafe` if the conversion is intentional and correct"
+        }
+      ],
+      "example": {
+        "bad_code": "void foo(int x);\n\n_Safe void f() {\n    void (*p)(float) = (void (*)(float))foo;  // ERROR: conversion forbidden\n}"
+      },
+      "keywords": [
+        "cast",
+        "conversion",
+        "forbidden",
+        "fun",
+        "unsafe"
+      ]
+    },
+    {
+      "code": "BSC-E0307",
+      "diagnostic_name": "err_safe_function",
+      "severity": "error",
+      "message_template": "%0 is forbidden in the _Safe function",
+      "category": "safe_zone",
+      "cause": "You performed a specific operation that is not allowed in a `_Safe` function. This is similar to BSC-E0301 but specifically targets function-level restrictions. Operations like inline assembly, `goto`, or calling `_Unsafe` functions are forbidden.",
+      "fix_strategies": [
+        {
+          "strategy": "move",
+          "description": "Move the operation to an `_Unsafe` block within the function"
+        },
+        {
+          "strategy": "extract",
+          "description": "Extract the unsafe operation into a separate non-safe function"
+        }
+      ],
+      "example": {
+        "bad_code": "_Safe void f() {\n    __asm__(\"nop\");  // ERROR: inline assembly is forbidden in _Safe function\n}"
+      },
+      "keywords": [
+        "_Safe",
+        "forbidden",
+        "function",
+        "safe"
+      ]
+    },
+    {
+      "code": "BSC-E0308",
+      "diagnostic_name": "err_safe_global_var",
+      "severity": "error",
+      "message_template": "defining mutable global variables is not allowed within the safe zone",
+      "category": "safe_zone",
+      "cause": "Mutable global variables are a source of data races in concurrent programs. BSC's safe zone prohibits defining new mutable global variables. Constant globals are still allowed.",
+      "fix_strategies": [
+        {
+          "strategy": "make",
+          "description": "Make the global `const` if it doesn't need to change"
+        },
+        {
+          "strategy": "define",
+          "description": "Define the global outside the safe zone"
+        }
+      ],
+      "example": {
+        "bad_code": "_Safe {\n    int global_counter = 0;  // ERROR: mutable global not allowed in safe zone\n}",
+        "good_code": "const int global_max = 100;  // OK: const global\n\nint global_counter = 0;  // OK: outside safe zone"
+      },
+      "keywords": [
+        "allowed",
+        "defining",
+        "global",
+        "mutable",
+        "safe",
+        "var",
+        "variables",
+        "within"
+      ]
+    },
+    {
+      "code": "BSC-E0309",
+      "diagnostic_name": "err_return_inc_dec_void_in_safe_zone",
+      "severity": "error",
+      "message_template": "result of '++' or '--' cannot be used as return value in safe zone; move the increment/decrement out of the return statement (or add an explicit cast to void to suppress)",
+      "category": "safe_zone",
+      "cause": "In BSC's safe zone, prefix/postfix `++` and `--` operators on pointers produce `void` to prevent pointer arithmetic mistakes. Returning this void result is an error.",
+      "fix_strategies": [
+        {
+          "strategy": "separate",
+          "description": "Separate the increment from the return statement"
+        }
+      ],
+      "example": {
+        "bad_code": "_Safe int f(int *p) {\n    return (*p)++;  // ERROR: result of ++ cannot be used as return value in safe zone\n}",
+        "good_code": "_Safe int f_fixed(int *p) {\n    int val = *p;\n    (*p)++;\n    return val;\n}"
+      },
+      "keywords": [
+        "dec",
+        "decrement",
+        "explicit",
+        "inc",
+        "increment",
+        "result",
+        "return",
+        "safe"
+      ]
+    },
+    {
+      "code": "BSC-E0310",
+      "diagnostic_name": "err_bsc_generic_heterogeneous_redecl",
+      "severity": "error",
+      "message_template": "generic function %0 cannot have both _Safe and _Unsafe declarations",
+      "category": "safe_zone",
+      "cause": "A generic function was declared with both `_Safe` and `_Unsafe` variants, which is not allowed. Generic functions must have a single safety qualification.",
+      "fix_strategies": [
+        {
+          "strategy": "choose",
+          "description": "Choose one safety qualification for the generic function"
+        },
+        {
+          "strategy": "if",
+          "description": "If both variants are needed, use different function names"
+        }
+      ],
+      "example": {
+        "bad_code": "_Safe void process<T>(T *p);\n_Unsafe void process<T>(T *p);  // ERROR: cannot have both"
+      },
+      "keywords": [
+        "_Safe",
+        "_Unsafe",
+        "bsc",
+        "declarations",
+        "function",
+        "generic",
+        "heterogeneous",
+        "redecl"
+      ]
+    },
+    {
+      "code": "BSC-E0311",
+      "diagnostic_name": "err_bsc_incompatible_heterogeneous_redecl",
+      "severity": "error",
+      "message_template": "function %0 has incompatible _Safe and _Unsafe declarations",
+      "category": "safe_zone",
+      "cause": "A function has both `_Safe` and `_Unsafe` overloads, but their signatures are incompatible beyond the safety qualifier.",
+      "fix_strategies": [
+        {
+          "strategy": "ensure",
+          "description": "Ensure the `_Safe` and `_Unsafe` declarations have compatible parameter and return types"
+        }
+      ],
+      "keywords": [
+        "_Safe",
+        "_Unsafe",
+        "bsc",
+        "declarations",
+        "function",
+        "heterogeneous",
+        "incompatible",
+        "redecl"
+      ]
+    },
+    {
+      "code": "BSC-E0312",
+      "diagnostic_name": "err_bsc_no_matching_heterogeneous_function",
+      "severity": "error",
+      "message_template": "no matching function for call to %0; argument types do not match any _Safe or _Unsafe declaration",
+      "category": "safe_zone",
+      "cause": "You called a function that has `_Safe`/`_Unsafe` overloads, but the provided arguments don't match any of the declared variants.",
+      "fix_strategies": [
+        {
+          "strategy": "check",
+          "description": "Check the function's declared parameter types for both the `_Safe` and `_Unsafe` variants"
+        },
+        {
+          "strategy": "adjust",
+          "description": "Adjust argument types to match one of the declarations"
+        }
+      ],
+      "keywords": [
+        "_Safe",
+        "_Unsafe",
+        "argument",
+        "bsc",
+        "declaration",
+        "function",
+        "heterogeneous",
+        "match"
+      ]
+    },
+    {
+      "code": "BSC-E0401",
+      "diagnostic_name": "err_nullable_pointer_dereference",
+      "severity": "error",
+      "message_template": "nullable pointer cannot be dereferenced",
+      "warning_flag": "-Wderef-nullable",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCNullability",
+        "DerefNullable"
+      ],
+      "category": "nullability",
+      "cause": "You attempted to dereference a pointer that is `_Nullable` — meaning it could be `NULL`. Dereferencing a null pointer is undefined behavior. BSC requires an explicit null check before dereferencing any nullable pointer.",
+      "fix_strategies": [
+        {
+          "strategy": "add",
+          "description": "Add a null check before dereferencing"
+        },
+        {
+          "strategy": "if",
+          "description": "If you know the pointer is never null in this context, cast it to `_Nonnull`"
+        }
+      ],
+      "example": {
+        "bad_code": "void f(int *_Nullable p) {\n    int x = *p;  // ERROR: nullable pointer cannot be dereferenced\n}",
+        "good_code": "void f_fixed(int *_Nullable p) {\n    if (p != NULL) {\n        int x = *p;  // OK: null check guards the dereference\n    }\n}"
+      },
+      "keywords": [
+        "dereference",
+        "dereferenced",
+        "nullable",
+        "pointer"
+      ]
+    },
+    {
+      "code": "BSC-E0402",
+      "diagnostic_name": "err_pass_nullable_argument",
+      "severity": "error",
+      "message_template": "cannot pass nullable pointer argument",
+      "warning_flag": "-Wpass-nullable",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCNullability",
+        "PassNullable"
+      ],
+      "category": "nullability",
+      "cause": "A function parameter expects a `_Nonnull` pointer, but you are passing a `_Nullable` pointer. The callee assumes the pointer is valid and may dereference it without checking.",
+      "fix_strategies": [
+        {
+          "strategy": "add",
+          "description": "Add a null check before the call"
+        },
+        {
+          "strategy": "if",
+          "description": "If the pointer is known non-null, annotate it as `_Nonnull`"
+        }
+      ],
+      "example": {
+        "bad_code": "void process(int *_Nonnull data);\n\nvoid f(int *_Nullable p) {\n    process(p);  // ERROR: cannot pass nullable pointer argument\n}",
+        "good_code": "void f_fixed(int *_Nullable p) {\n    if (p != NULL) {\n        process(p);  // OK: guarded by null check\n    }\n}"
+      },
+      "keywords": [
+        "argument",
+        "nullable",
+        "pass",
+        "pointer"
+      ]
+    },
+    {
+      "code": "BSC-E0403",
+      "diagnostic_name": "err_return_nullable",
+      "severity": "error",
+      "message_template": "cannot return nullable pointer type",
+      "warning_flag": "-Wreturn-nullable",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCNullability",
+        "ReturnNullable"
+      ],
+      "category": "nullability",
+      "cause": "The function's return type is `_Nonnull`, but you are returning a `_Nullable` pointer. Callers of this function expect a valid pointer and won't check for null.",
+      "fix_strategies": [
+        {
+          "strategy": "add",
+          "description": "Add a null check and provide a fallback or early return"
+        },
+        {
+          "strategy": "change",
+          "description": "Change the return type to `_Nullable` if null is a valid return value"
+        }
+      ],
+      "example": {
+        "bad_code": "int *_Nonnull get_value(int *_Nullable p) {\n    return p;  // ERROR: cannot return nullable pointer type\n}",
+        "good_code": "int *_Nonnull get_value_fixed(int *_Nullable p, int *_Nonnull fallback) {\n    if (p != NULL) {\n        return p;\n    }\n    return fallback;\n}"
+      },
+      "keywords": [
+        "nullable",
+        "pointer",
+        "return"
+      ]
+    },
+    {
+      "code": "BSC-E0404",
+      "diagnostic_name": "err_nullable_cast_nonnull",
+      "severity": "error",
+      "message_template": "cannot cast nullable pointer to nonnull type",
+      "warning_flag": "-Wcast-nullable",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCNullability",
+        "CastNullable"
+      ],
+      "category": "nullability",
+      "cause": "You are explicitly casting a `_Nullable` pointer to a `_Nonnull` type without first establishing that the pointer is non-null. This bypasses the safety guarantee.",
+      "fix_strategies": [
+        {
+          "strategy": "check",
+          "description": "Check for null before casting"
+        },
+        {
+          "strategy": "use",
+          "description": "Use a conditional assignment"
+        }
+      ],
+      "example": {
+        "bad_code": "void f(int *_Nullable p) {\n    int *_Nonnull q = (int *_Nonnull)p;  // ERROR: cannot cast nullable to nonnull\n}",
+        "good_code": "void f_fixed(int *_Nullable p) {\n    if (p != NULL) {\n        int *_Nonnull q = (int *_Nonnull)p;  // OK: guarded\n    }\n}"
+      },
+      "keywords": [
+        "cast",
+        "nonnull",
+        "nullable",
+        "pointer"
+      ]
+    },
+    {
+      "code": "BSC-E0405",
+      "diagnostic_name": "err_nullable_pointer_access_member",
+      "severity": "error",
+      "message_template": "cannot access member through nullable pointer",
+      "warning_flag": "-Wassign-nullable",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCNullability",
+        "AssignNullable"
+      ],
+      "category": "nullability",
+      "cause": "You tried to access a struct member through a `_Nullable` pointer using `->`. If the pointer is null, this would be undefined behavior. A null check is required first.",
+      "fix_strategies": [
+        {
+          "strategy": "add",
+          "description": "Add a null check before member access"
+        }
+      ],
+      "example": {
+        "bad_code": "struct Point { int x; int y; };\n\nvoid f(struct Point *_Nullable p) {\n    int x = p->x;  // ERROR: cannot access member through nullable pointer\n}",
+        "good_code": "void f_fixed(struct Point *_Nullable p) {\n    if (p != NULL) {\n        int x = p->x;  // OK\n    }\n}"
+      },
+      "keywords": [
+        "access",
+        "member",
+        "nullable",
+        "pointer",
+        "through"
+      ]
+    },
+    {
+      "code": "BSC-E0406",
+      "diagnostic_name": "err_nonnull_assigned_by_nullable",
+      "severity": "error",
+      "message_template": "nonnull pointer cannot be assigned by nullable pointer",
+      "warning_flag": "-Wassign-nonnull",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCNullability",
+        "AssignNonnull"
+      ],
+      "category": "nullability",
+      "cause": "You are assigning a `_Nullable` pointer to a `_Nonnull` variable. This would allow a potentially null value to enter a non-null context, violating the nullability contract.",
+      "fix_strategies": [
+        {
+          "strategy": "guard",
+          "description": "Guard with a null check before assignment"
+        },
+        {
+          "strategy": "change",
+          "description": "Change the target type to `_Nullable` if null is acceptable"
+        }
+      ],
+      "example": {
+        "bad_code": "void f(int *_Nullable p) {\n    int *_Nonnull q = p;  // ERROR: nonnull cannot be assigned by nullable\n}",
+        "good_code": "void f_fixed(int *_Nullable p) {\n    if (p != NULL) {\n        int *_Nonnull q = p;  // OK: guarded\n    }\n}"
+      },
+      "keywords": [
+        "assigned",
+        "nonnull",
+        "nullable",
+        "pointer"
+      ]
+    },
+    {
+      "code": "BSC-E0407",
+      "diagnostic_name": "err_nonnull_init_by_default",
+      "severity": "error",
+      "message_template": "`%0` is a _Nonnull pointer and must be properly initialized.",
+      "warning_flag": "-Winit-nonnull",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCNullability",
+        "InitNonnull"
+      ],
+      "category": "nullability",
+      "cause": "A `_Nonnull` pointer variable was declared without initialization. Since `_Nonnull` guarantees the pointer is always valid, it must be given a valid value at declaration time. An uninitialized `_Nonnull` pointer could be null or contain garbage.",
+      "fix_strategies": [
+        {
+          "strategy": "initialize",
+          "description": "Initialize the pointer at declaration"
+        },
+        {
+          "strategy": "if",
+          "description": "If the value isn't available yet, use `_Nullable` instead"
+        }
+      ],
+      "example": {
+        "bad_code": "void f() {\n    int *_Nonnull p;  // ERROR: _Nonnull pointer must be properly initialized\n}",
+        "good_code": "void f_fixed() {\n    int value = 42;\n    int *_Nonnull p = &value;  // OK: initialized with valid pointer\n}"
+      },
+      "keywords": [
+        "_Nonnull",
+        "default",
+        "init",
+        "initialized",
+        "nonnull",
+        "pointer",
+        "properly"
+      ]
+    },
+    {
+      "code": "BSC-E0501",
+      "diagnostic_name": "err_trait_is_undefined",
+      "severity": "error",
+      "message_template": "%0 must be defined before it can be used",
+      "category": "traits",
+      "cause": "You referenced a trait that has not been defined yet. Traits must be declared with `_Trait` before they can be used in `_Impl` blocks or as pointer types.",
+      "fix_strategies": [
+        {
+          "strategy": "define",
+          "description": "Define the trait before using it"
+        }
+      ],
+      "example": {
+        "bad_code": "_Impl Printable for int { /* ... */ }  // ERROR: Printable not defined",
+        "good_code": "_Trait Printable {\n    void print(This *this);\n};\n\n_Impl Printable for int {\n    void print(int *this) { /* ... */ }\n};"
+      },
+      "keywords": [
+        "before",
+        "defined",
+        "trait",
+        "undefined"
+      ]
+    },
+    {
+      "code": "BSC-E0502",
+      "diagnostic_name": "err_type_has_not_impl_trait",
+      "severity": "error",
+      "message_template": "expected a pointer type which has implemented %0, found %1",
+      "category": "traits",
+      "cause": "You assigned a pointer to a trait pointer variable, but the pointed-to type has not implemented the required trait. The type must have an `_Impl` block for that trait.",
+      "fix_strategies": [
+        {
+          "strategy": "add",
+          "description": "Add an `_Impl` block for the trait"
+        }
+      ],
+      "example": {
+        "bad_code": "_Trait Drawable { void draw(This *this); };\n\nstruct Circle { int r; };\n\nvoid f() {\n    struct Circle c = { .r = 5 };\n    _Trait Drawable *d = &c;  // ERROR: Circle has not implemented Drawable\n}",
+        "good_code": "_Impl Drawable for struct Circle {\n    void draw(struct Circle *this) { /* ... */ }\n};"
+      },
+      "keywords": [
+        "expected",
+        "has",
+        "impl",
+        "implemented",
+        "not",
+        "pointer",
+        "trait",
+        "type"
+      ]
+    },
+    {
+      "code": "BSC-E0503",
+      "diagnostic_name": "err_trait_impl",
+      "severity": "error",
+      "message_template": "function %0 in %1 is not implemented for %2",
+      "category": "traits",
+      "cause": "Your `_Impl` block is missing one or more functions declared in the trait. All trait functions must be implemented.",
+      "fix_strategies": [
+        {
+          "strategy": "implement",
+          "description": "Implement all functions declared in the trait"
+        }
+      ],
+      "example": {
+        "bad_code": "_Trait Shape {\n    void draw(This *this);\n    int area(This *this);\n};\n\n_Impl Shape for struct Circle {\n    void draw(struct Circle *this) { /* ... */ }\n    // ERROR: function area in Shape is not implemented for struct Circle\n};"
+      },
+      "keywords": [
+        "function",
+        "impl",
+        "implemented",
+        "trait"
+      ]
+    },
+    {
+      "code": "BSC-E0504",
+      "diagnostic_name": "err_trait_impl_function_type_conflict",
+      "severity": "error",
+      "message_template": "type of %0 conflicts with that of %1",
+      "category": "traits",
+      "cause": "The function you provided in your `_Impl` block has a different signature (parameter types or return type) than what the trait declares. The signatures must match exactly (except `This` is replaced with the concrete type).",
+      "fix_strategies": [
+        {
+          "strategy": "match",
+          "description": "Match the function signature exactly as declared in the trait, substituting the concrete type for `This`"
+        }
+      ],
+      "keywords": [
+        "conflict",
+        "conflicts",
+        "function",
+        "impl",
+        "trait",
+        "type"
+      ]
+    },
+    {
+      "code": "BSC-E0505",
+      "diagnostic_name": "err_trait_member_not_func",
+      "severity": "error",
+      "message_template": "only function declarations can be _Trait member",
+      "warning_flag": "-Wbsc-trait-missing",
+      "group_path": [
+        "BSCTraitMissing"
+      ],
+      "category": "traits",
+      "cause": "You declared something other than a function inside a `_Trait` block. Traits can only contain function declarations.",
+      "fix_strategies": [
+        {
+          "strategy": "only",
+          "description": "Only declare functions in traits; use struct fields for data"
+        }
+      ],
+      "example": {
+        "bad_code": "_Trait Foo {\n    int value;  // ERROR: only function declarations can be trait member\n};"
+      },
+      "keywords": [
+        "_Trait",
+        "declarations",
+        "func",
+        "function",
+        "member",
+        "not",
+        "trait"
+      ]
+    },
+    {
+      "code": "BSC-E0506",
+      "diagnostic_name": "err_impl_trait_for_instantiated_type",
+      "severity": "error",
+      "message_template": "cannot _Impl _Trait for an instantiated type",
+      "category": "traits",
+      "cause": "You tried to implement a trait for an already-instantiated generic type. Trait implementations must be for base types, not specific generic instantiations.",
+      "fix_strategies": [
+        {
+          "strategy": "implement",
+          "description": "Implement the trait for the base (non-instantiated) type"
+        }
+      ],
+      "keywords": [
+        "_Impl",
+        "_Trait",
+        "for",
+        "impl",
+        "instantiated",
+        "trait",
+        "type"
+      ]
+    },
+    {
+      "code": "BSC-E0507",
+      "diagnostic_name": "err_variables_not_trait_pointer",
+      "severity": "error",
+      "message_template": "only _Trait pointer type is allowed to be declared",
+      "category": "traits",
+      "cause": "You tried to declare a trait variable that is not a pointer. Trait types can only be used as pointer types (`_Trait Name *`) because traits are dynamically dispatched and require indirection.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_variables_not_trait_pointer]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Trait Printable p;  // ERROR: only trait pointer type is allowed",
+        "good_code": "_Trait Printable *p;  // OK: trait pointer"
+      },
+      "keywords": [
+        "_Trait",
+        "allowed",
+        "declared",
+        "not",
+        "pointer",
+        "trait",
+        "variables"
+      ]
+    },
+    {
+      "code": "BSC-E0508",
+      "diagnostic_name": "invalid_param_for_trait_member",
+      "severity": "error",
+      "message_template": "the first parameter of _Trait member function must be 'This* this'",
+      "category": "traits",
+      "cause": "Trait member functions must take `This *this` as their first parameter. `This` is a placeholder for the implementing type.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for invalid_param_for_trait_member]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Trait Foo {\n    void bar(This *this);  // OK: This* this as first param\n};"
+      },
+      "keywords": [
+        "_Trait",
+        "first",
+        "for",
+        "function",
+        "invalid",
+        "member",
+        "param",
+        "parameter"
+      ]
+    },
+    {
+      "code": "BSC-E0509",
+      "diagnostic_name": "err_unexpected_token_for_impl_trait_decl",
+      "severity": "error",
+      "message_template": "unexpected token for ImplTraitDecl",
+      "category": "traits",
+      "cause": "The `_Impl` declaration has a syntax error. The expected syntax is `_Impl TraitName for TypeName { ... }`.",
+      "fix_strategies": [
+        {
+          "strategy": "check",
+          "description": "Check the `_Impl` syntax: `_Impl <Trait> for <Type> { <functions> };`"
+        }
+      ],
+      "keywords": [
+        "decl",
+        "for",
+        "impl",
+        "impltraitdecl",
+        "token",
+        "trait",
+        "unexpected"
+      ]
+    },
+    {
+      "code": "BSC-E0510",
+      "diagnostic_name": "err_expected_identifier_after_trait",
+      "severity": "error",
+      "message_template": "expected identifier after _Trait",
+      "category": "traits",
+      "cause": "The `_Trait` keyword must be followed by an identifier (the trait name).",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_expected_identifier_after_trait]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Trait MyTrait {  // OK: identifier follows _Trait\n    // ...\n};"
+      },
+      "keywords": [
+        "_Trait",
+        "after",
+        "expected",
+        "identifier",
+        "trait"
+      ]
+    },
+    {
+      "code": "BSC-E0511",
+      "diagnostic_name": "err_trait_def_not_at_top_level",
+      "severity": "error",
+      "message_template": "_Trait is only allowed to be defined at top-level",
+      "category": "traits",
+      "cause": "Traits must be defined at file scope, not inside functions or other blocks.",
+      "fix_strategies": [
+        {
+          "strategy": "move",
+          "description": "Move the trait definition to the top level of the file"
+        }
+      ],
+      "keywords": [
+        "_Trait",
+        "allowed",
+        "def",
+        "defined",
+        "level",
+        "not",
+        "top",
+        "trait"
+      ]
+    },
+    {
+      "code": "BSC-E0512",
+      "diagnostic_name": "err_invalid_trait",
+      "severity": "error",
+      "message_template": "invalid syntax, semi not expected after '_Trait %0'",
+      "category": "traits",
+      "cause": "A semicolon was found immediately after `_Trait Name` instead of an opening brace. Trait definitions require a body.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_invalid_trait]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Trait Foo {  // OK: opening brace, not semicolon\n    void bar(This *this);\n};"
+      },
+      "keywords": [
+        "_Trait",
+        "after",
+        "expected",
+        "invalid",
+        "syntax",
+        "trait"
+      ]
+    },
+    {
+      "code": "BSC-E0513",
+      "diagnostic_name": "err_multi_trait_call_func",
+      "severity": "error",
+      "message_template": "%0 cannot directly call functions",
+      "category": "traits",
+      "cause": "You tried to call a function directly on a multi-trait pointer. Multi-trait pointers require disambiguation when calling trait functions.",
+      "fix_strategies": [
+        {
+          "strategy": "cast",
+          "description": "Cast to a specific trait pointer before calling the function"
+        }
+      ],
+      "keywords": [
+        "call",
+        "directly",
+        "func",
+        "functions",
+        "multi",
+        "trait"
+      ]
+    },
+    {
+      "code": "BSC-E0601",
+      "diagnostic_name": "err_tag_name",
+      "severity": "error",
+      "message_template": "must ignore '_Owned struct' tag before struct name",
+      "category": "owned_struct",
+      "cause": "When referring to an `_Owned struct` type after its declaration, you should not prefix it with `struct`. The `_Owned struct Name { ... }` declaration introduces `Name` as a type name directly.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_tag_name]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Foo { _Public: int *_Owned p; };\n\nvoid f(struct Foo *p) {}  // ERROR: must ignore '_Owned struct' tag",
+        "good_code": "void f(Foo *p) {}  // OK: use Foo directly, not struct Foo"
+      },
+      "keywords": [
+        "_Owned",
+        "before",
+        "ignore",
+        "name",
+        "struct",
+        "tag"
+      ]
+    },
+    {
+      "code": "BSC-E0602",
+      "diagnostic_name": "err_inconsistent_tag_name",
+      "severity": "error",
+      "message_template": "inconsistent tag before struct name",
+      "category": "owned_struct",
+      "cause": "You used an inconsistent tag (e.g., `struct` vs no tag) when referring to an `_Owned struct` type across different declarations.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use the type name consistently without the `struct` prefix for `_Owned struct` types"
+        }
+      ],
+      "keywords": [
+        "before",
+        "inconsistent",
+        "name",
+        "struct",
+        "tag"
+      ]
+    },
+    {
+      "code": "BSC-E0603",
+      "diagnostic_name": "err_need_explicit_constructor_owned_struct",
+      "severity": "error",
+      "message_template": "need explicit constructor because %0 has private field",
+      "category": "owned_struct",
+      "cause": "The `_Owned struct` has `_Private` fields, so it cannot be initialized with a designated initializer (`{ .field = value }`). You must provide an explicit constructor function.",
+      "fix_strategies": [
+        {
+          "strategy": "create",
+          "description": "Create a constructor function that initializes the struct"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Foo {\n_Private:\n    int *_Owned data;\n};\n\nvoid f() {\n    Foo x = { .data = safe_malloc<int>(0) };  // ERROR: needs explicit constructor\n}",
+        "good_code": "Foo Foo_new() {\n    Foo x;\n    x.data = safe_malloc<int>(0);\n    return x;\n}"
+      },
+      "keywords": [
+        "constructor",
+        "explicit",
+        "field",
+        "need",
+        "owned",
+        "private",
+        "struct"
+      ]
+    },
+    {
+      "code": "BSC-E0604",
+      "diagnostic_name": "err_struct_member_redeclared",
+      "severity": "error",
+      "message_template": "struct member cannot be redeclared",
+      "category": "owned_struct",
+      "cause": "You declared the same member name more than once in an `_Owned struct`.",
+      "fix_strategies": [
+        {
+          "strategy": "remove",
+          "description": "Remove the duplicate member declaration"
+        }
+      ],
+      "keywords": [
+        "member",
+        "redeclared",
+        "struct"
+      ]
+    },
+    {
+      "code": "BSC-E0605",
+      "diagnostic_name": "err_invalid_member_use_in_class_method",
+      "severity": "error",
+      "message_template": "invalid implicit use of member %0 in struct member function",
+      "category": "owned_struct",
+      "cause": "You used a member name without explicitly accessing it through `this->` in a member function. BSC requires explicit member access via `this` pointer.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_invalid_member_use_in_class_method]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Foo {\n_Public:\n    int value;\n};\n\nint Foo_get(Foo *this) {\n    return value;  // ERROR: invalid implicit use of member\n}",
+        "good_code": "int Foo_get(Foo *this) {\n    return this->value;  // OK: explicit this-> access\n}"
+      },
+      "keywords": [
+        "class",
+        "function",
+        "implicit",
+        "invalid",
+        "member",
+        "method",
+        "struct",
+        "use"
+      ]
+    },
+    {
+      "code": "BSC-E0606",
+      "diagnostic_name": "err_static_class_func",
+      "severity": "error",
+      "message_template": "function declared in struct scope cannot have 'static' storage class",
+      "category": "owned_struct",
+      "cause": "Member functions of `_Owned struct` cannot be declared `static`. Use a regular (non-member) function if you need a static function.",
+      "fix_strategies": [
+        {
+          "strategy": "remove",
+          "description": "Remove the `static` keyword from the member function"
+        }
+      ],
+      "keywords": [
+        "class",
+        "declared",
+        "func",
+        "function",
+        "scope",
+        "static",
+        "storage",
+        "struct"
+      ]
+    },
+    {
+      "code": "BSC-E0607",
+      "diagnostic_name": "err_destructor_call",
+      "severity": "error",
+      "message_template": "destructor %0 cannot be called directly",
+      "warning_flag": "-Wbsc-owned-struct",
+      "group_path": [
+        "BSCOwnedStruct"
+      ],
+      "category": "owned_struct",
+      "cause": "Destructors are called automatically when an `_Owned struct` variable goes out of scope. You cannot invoke them manually.",
+      "fix_strategies": [
+        {
+          "strategy": "let",
+          "description": "Let the destructor run automatically at scope end"
+        },
+        {
+          "strategy": "if",
+          "description": "If you need early cleanup, use a block scope"
+        }
+      ],
+      "example": {
+        "bad_code": "void f() {\n    Foo x = Foo_new();\n    ~Foo(&x);  // ERROR: destructor cannot be called directly\n}",
+        "good_code": "void f() {\n    {\n        Foo x = Foo_new();\n    }  // destructor runs here automatically\n}"
+      },
+      "keywords": [
+        "call",
+        "called",
+        "destructor",
+        "directly"
+      ]
+    },
+    {
+      "code": "BSC-E0608",
+      "diagnostic_name": "err_assignment_in_destructor",
+      "severity": "error",
+      "message_template": "'this' cannot be moved in destructor",
+      "warning_flag": "-Wbsc-owned-struct",
+      "group_path": [
+        "BSCOwnedStruct"
+      ],
+      "category": "owned_struct",
+      "cause": "Inside a destructor, the `this` pointer represents the object being destroyed. Moving `this` to another variable would transfer ownership away from the destruction process, leaving the object in an invalid state.",
+      "fix_strategies": [
+        {
+          "strategy": "don't",
+          "description": "Don't move `this` in the destructor; only free the owned fields"
+        }
+      ],
+      "keywords": [
+        "assignment",
+        "destructor",
+        "moved"
+      ]
+    },
+    {
+      "code": "BSC-E0609",
+      "diagnostic_name": "err_owned_struct_destructor_name",
+      "severity": "error",
+      "message_template": "expected the _Owned struct name after '~' to name the enclosing _Owned struct",
+      "category": "owned_struct",
+      "cause": "The name after `~` in a destructor declaration doesn't match the struct name. Destructors must be named `~StructName`.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_owned_struct_destructor_name]"
+        }
+      ],
+      "example": {
+        "bad_code": "_Owned struct Foo { _Public: int *_Owned p; };\n\nvoid ~Foo(Foo *this) {  // OK: matches struct name\n    free_owned<int>(this->p);\n}"
+      },
+      "keywords": [
+        "_Owned",
+        "after",
+        "destructor",
+        "enclosing",
+        "expected",
+        "name",
+        "owned",
+        "struct"
+      ]
+    },
+    {
+      "code": "BSC-E0610",
+      "diagnostic_name": "err_owned_struct_destructor_body",
+      "severity": "error",
+      "message_template": "destructor must have a function body",
+      "warning_flag": "-Wuse-moved-owned",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCOwnership",
+        "UseOwned",
+        "UseMovedOwned"
+      ],
+      "category": "owned_struct",
+      "cause": "You declared a destructor without providing a function body. Destructors cannot be forward-declared; they must be defined with a body.",
+      "fix_strategies": [
+        {
+          "strategy": "provide",
+          "description": "Provide a function body that frees all `_Owned` fields"
+        }
+      ],
+      "keywords": [
+        "body",
+        "destructor",
+        "function",
+        "owned",
+        "struct"
+      ]
+    },
+    {
+      "code": "BSC-E0611",
+      "diagnostic_name": "invalid_param_for_destructor",
+      "severity": "error",
+      "message_template": "the parameter of destructor must be '%0 this'",
+      "category": "owned_struct",
+      "cause": "The destructor's parameter must be a pointer to the struct type, named `this`.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for invalid_param_for_destructor]"
+        }
+      ],
+      "example": {
+        "bad_code": "void ~Foo(Foo *this) { /* ... */ }  // OK"
+      },
+      "keywords": [
+        "destructor",
+        "for",
+        "invalid",
+        "param",
+        "parameter"
+      ]
+    },
+    {
+      "code": "BSC-E0612",
+      "diagnostic_name": "invalid_param_num_for_destructor",
+      "severity": "error",
+      "message_template": "destructor can only have one parameter",
+      "category": "owned_struct",
+      "cause": "Destructors take exactly one parameter: `StructName *this`. Additional parameters are not allowed.",
+      "fix_strategies": [
+        {
+          "strategy": "remove",
+          "description": "Remove extra parameters; if you need additional cleanup logic, call helper functions from within the destructor"
+        }
+      ],
+      "keywords": [
+        "destructor",
+        "for",
+        "invalid",
+        "num",
+        "param",
+        "parameter"
+      ]
+    },
+    {
+      "code": "BSC-E0701",
+      "diagnostic_name": "err_incompatible_pointer_cast",
+      "severity": "error",
+      "message_template": "incompatible conversion from pointer type '%0' to non-pointer type '%1' in member function call",
+      "category": "type_system",
+      "cause": "A member function call involves passing a pointer type where a non-pointer type is expected, or vice versa. The `this` parameter or other parameters have a type mismatch involving pointer indirection.",
+      "fix_strategies": [
+        {
+          "strategy": "check",
+          "description": "Check the member function's parameter types and ensure the object/arguments match"
+        },
+        {
+          "strategy": "if",
+          "description": "If calling `obj.method()`, ensure `obj` has the correct pointer indirection level"
+        }
+      ],
+      "keywords": [
+        "cast",
+        "conversion",
+        "function",
+        "incompatible",
+        "member",
+        "pointer"
+      ]
+    },
+    {
+      "code": "BSC-E0702",
+      "diagnostic_name": "err_incompatible_const_cast",
+      "severity": "error",
+      "message_template": "incompatible conversion from const type '%0' to non-const type '%1' in member function call",
+      "category": "type_system",
+      "cause": "You are calling a non-const member function on a const-qualified object. The function expects a mutable `this` pointer but received a `const` one.",
+      "fix_strategies": [
+        {
+          "strategy": "call",
+          "description": "Call only const-compatible member functions on const objects"
+        },
+        {
+          "strategy": "remove",
+          "description": "Remove the `const` qualifier if mutation is intended"
+        }
+      ],
+      "example": {
+        "bad_code": "void Foo_mutate(Foo *this) { /* modifies this */ }\n\nvoid f(const Foo *p) {\n    p->mutate();  // ERROR: incompatible const to non-const conversion\n}"
+      },
+      "keywords": [
+        "cast",
+        "const",
+        "conversion",
+        "function",
+        "incompatible",
+        "member"
+      ]
+    },
+    {
+      "code": "BSC-E0703",
+      "diagnostic_name": "err_incompatible_owned_cast",
+      "severity": "error",
+      "message_template": "incompatible conversion from non _Owned type '%0' to _Owned type '%1' in member function call",
+      "category": "type_system",
+      "cause": "A member function expects an `_Owned` pointer parameter, but you passed a non-owned (raw or `_Borrow`) pointer. Ownership cannot be implicitly created — it must be explicitly transferred.",
+      "fix_strategies": [
+        {
+          "strategy": "pass",
+          "description": "Pass an `_Owned` pointer to the function"
+        },
+        {
+          "strategy": "if",
+          "description": "If the function needs to consume ownership, ensure the caller has ownership to give"
+        }
+      ],
+      "keywords": [
+        "_Owned",
+        "cast",
+        "conversion",
+        "function",
+        "incompatible",
+        "member",
+        "owned"
+      ]
+    },
+    {
+      "code": "BSC-E0704",
+      "diagnostic_name": "err_cvrqualified_member_type_unsupported",
+      "severity": "error",
+      "message_template": "type of member function is wrong, CVR qualified type is unsupported, but found '%0'",
+      "category": "type_system",
+      "cause": "The member function's type uses a const/volatile/restrict (CVR) qualified type in a position where BSC does not support it. BSC member functions have specific rules about where qualifiers can appear.",
+      "fix_strategies": [
+        {
+          "strategy": "remove",
+          "description": "Remove unsupported CVR qualifiers from the member function's type"
+        }
+      ],
+      "keywords": [
+        "cvrqualified",
+        "function",
+        "member",
+        "qualified",
+        "type",
+        "unsupported",
+        "wrong"
+      ]
+    },
+    {
+      "code": "BSC-E0705",
+      "diagnostic_name": "err_this_type_unsupported",
+      "severity": "error",
+      "message_template": "type of parameter 'this' is wrong, expected 'This*' or 'This' or '%0*' or '%0', but found '%1'",
+      "category": "type_system",
+      "cause": "The `this` parameter in a member function has an incorrect type. It must be either a pointer to the struct type (`Type *this`) or the struct type itself (`Type this`).",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_this_type_unsupported]"
+        }
+      ],
+      "example": {
+        "bad_code": "struct Foo { int x; };\n\nint Foo_get(int *this) {  // ERROR: expected Foo* or Foo, found int*\n    return *this;\n}",
+        "good_code": "int Foo_get(Foo *this) {  // OK\n    return this->x;\n}"
+      },
+      "keywords": [
+        "expected",
+        "parameter",
+        "this",
+        "type",
+        "unsupported",
+        "wrong"
+      ]
+    },
+    {
+      "code": "BSC-E0801",
+      "diagnostic_name": "err_async_non_function",
+      "severity": "error",
+      "message_template": "'_Async' can only appear on functions",
+      "category": "async",
+      "cause": "The `_Async` qualifier was applied to something other than a function declaration. Only functions can be asynchronous.",
+      "fix_strategies": [
+        {
+          "strategy": "move",
+          "description": "Move `_Async` to a function declaration"
+        }
+      ],
+      "example": {
+        "bad_code": "_Async void fetch_data() { /* ... */ }  // OK"
+      },
+      "keywords": [
+        "_Async",
+        "appear",
+        "async",
+        "function",
+        "functions",
+        "non"
+      ]
+    },
+    {
+      "code": "BSC-E0802",
+      "diagnostic_name": "err_async_main",
+      "severity": "error",
+      "message_template": "'main' is not allowed to be declared _Async",
+      "category": "async",
+      "cause": "The `main` function cannot be `_Async` because it is the program entry point and has a fixed calling convention defined by the C runtime.",
+      "fix_strategies": [
+        {
+          "strategy": "create",
+          "description": "Create a separate `_Async` function and call it from `main`"
+        }
+      ],
+      "example": {
+        "bad_code": "_Async void async_main() { /* ... */ }\n\nint main() {\n    // launch async_main via your async runtime\n    return 0;\n}"
+      },
+      "keywords": [
+        "_Async",
+        "allowed",
+        "async",
+        "declared",
+        "main"
+      ]
+    },
+    {
+      "code": "BSC-E0803",
+      "diagnostic_name": "err_await_invalid_scope",
+      "severity": "error",
+      "message_template": "_Await expression is not allowed to appear in %0",
+      "category": "async",
+      "cause": "`_Await` was used in a context where it is not valid, such as inside a non-async function, a global initializer, or certain control flow constructs.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use `_Await` only inside `_Async` functions"
+        }
+      ],
+      "keywords": [
+        "_Await",
+        "allowed",
+        "appear",
+        "await",
+        "expression",
+        "invalid",
+        "scope"
+      ]
+    },
+    {
+      "code": "BSC-E0804",
+      "diagnostic_name": "err_async_func_unsupported",
+      "severity": "error",
+      "message_template": "_Async function does not support %0",
+      "category": "async",
+      "cause": "Certain language features are not supported inside `_Async` functions due to the coroutine transformation. This may include specific control flow constructs or variable-length arrays.",
+      "fix_strategies": [
+        {
+          "strategy": "refactor",
+          "description": "Refactor the unsupported feature out of the `_Async` function"
+        },
+        {
+          "strategy": "move",
+          "description": "Move the unsupported operation into a synchronous helper function"
+        }
+      ],
+      "keywords": [
+        "_Async",
+        "async",
+        "func",
+        "function",
+        "support",
+        "unsupported"
+      ]
+    },
+    {
+      "code": "BSC-E0805",
+      "diagnostic_name": "err_not_a_async_call",
+      "severity": "error",
+      "message_template": "the _Await expression's external function declaration must be modified by _Async or return 'Future' type",
+      "category": "async",
+      "cause": "`_Await` can only be applied to calls that return a `Future` type or to functions declared `_Async`. The expression you tried to await does not meet either condition.",
+      "fix_strategies": [
+        {
+          "strategy": "make",
+          "description": "Make the called function `_Async`, or"
+        },
+        {
+          "strategy": "ensure",
+          "description": "Ensure it returns a `Future` type"
+        }
+      ],
+      "example": {
+        "bad_code": "int compute(int x) { return x * 2; }\n\n_Async void f() {\n    int result = _Await compute(5);  // ERROR: compute is not _Async\n}",
+        "good_code": "_Async int compute(int x) { return x * 2; }\n\n_Async void f() {\n    int result = _Await compute(5);  // OK\n}"
+      },
+      "keywords": [
+        "_Async",
+        "_Await",
+        "async",
+        "call",
+        "declaration",
+        "expression",
+        "external",
+        "function"
+      ]
+    },
+    {
+      "code": "BSC-E0806",
+      "diagnostic_name": "err_function_not_found",
+      "severity": "error",
+      "message_template": "'%0' was not found, you need to include %1 before using the '_Async' keyword",
+      "category": "async",
+      "cause": "The `_Async` runtime requires certain support functions to be declared. You are missing the necessary header include.",
+      "fix_strategies": [
+        {
+          "strategy": "include",
+          "description": "Include the required header as specified in the error message"
+        }
+      ],
+      "keywords": [
+        "_Async",
+        "before",
+        "found",
+        "function",
+        "include",
+        "keyword",
+        "not",
+        "using"
+      ]
+    },
+    {
+      "code": "BSC-E0807",
+      "diagnostic_name": "err_await_expression_not_found",
+      "severity": "error",
+      "message_template": "_Await expression was not found in _Async function",
+      "category": "async",
+      "cause": "An `_Async` function must contain at least one `_Await` expression. A function declared `_Async` without any awaits should be a regular function instead.",
+      "fix_strategies": [
+        {
+          "strategy": "add",
+          "description": "Add an `_Await` expression, or"
+        },
+        {
+          "strategy": "remove",
+          "description": "Remove the `_Async` qualifier if the function doesn't need to be asynchronous"
+        }
+      ],
+      "keywords": [
+        "_Async",
+        "_Await",
+        "await",
+        "expression",
+        "found",
+        "function",
+        "not"
+      ]
+    },
+    {
+      "code": "BSC-E0808",
+      "diagnostic_name": "err_invalid_async_function",
+      "severity": "error",
+      "message_template": "function which returns 'Future' type should not be modified by '_Async'",
+      "category": "async",
+      "cause": "A function that already returns a `Future` type should not also be marked `_Async`. The `_Async` qualifier automatically wraps the return type in `Future`; applying both would result in double-wrapping.",
+      "fix_strategies": [
+        {
+          "strategy": "remove",
+          "description": "Remove `_Async` if you explicitly return `Future`"
+        },
+        {
+          "strategy": "or",
+          "description": "Or remove the `Future` return type and let `_Async` handle it"
+        }
+      ],
+      "example": {
+        "bad_code": "// Either:\nFuture compute(int x) { /* manually returns Future */ }\n\n// Or:\n_Async int compute(int x) { /* compiler wraps return in Future */ }"
+      },
+      "keywords": [
+        "_Async",
+        "async",
+        "function",
+        "future",
+        "invalid",
+        "modified",
+        "returns",
+        "should"
+      ]
+    },
+    {
+      "code": "BSC-E0901",
+      "diagnostic_name": "err_invalid_struct_definition",
+      "severity": "error",
+      "message_template": "struct definition in generic fuction is not supported in BSC",
+      "category": "generics_constexpr",
+      "cause": "BSC does not allow defining new struct types inside generic functions. Struct definitions must be at file scope or inside non-generic functions.",
+      "fix_strategies": [
+        {
+          "strategy": "move",
+          "description": "Move the struct definition outside the generic function"
+        }
+      ],
+      "example": {
+        "bad_code": "struct Result { int code; int value; };  // OK: at file scope\n\nint process<T>(T *data) {\n    struct Result r = { .code = 0, .value = 0 };\n    // ...\n}"
+      },
+      "keywords": [
+        "definition",
+        "fuction",
+        "generic",
+        "invalid",
+        "struct",
+        "supported"
+      ]
+    },
+    {
+      "code": "BSC-E0902",
+      "diagnostic_name": "err_extended_type_not_instantiated_type",
+      "severity": "error",
+      "message_template": "extended type of a BSC member function cannot be an instantiated type",
+      "category": "generics_constexpr",
+      "cause": "When declaring a member function for a generic type, you cannot use an instantiated (concrete) type as the extended type. Use the uninstantiated generic form instead.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use the generic type form, not a specific instantiation"
+        }
+      ],
+      "keywords": [
+        "extended",
+        "function",
+        "instantiated",
+        "member",
+        "not",
+        "type"
+      ]
+    },
+    {
+      "code": "BSC-E0903",
+      "diagnostic_name": "err_conflicting_function_declarations",
+      "severity": "error",
+      "message_template": "conflicting function declarations for %0",
+      "category": "generics_constexpr",
+      "cause": "Multiple declarations of the same function have incompatible signatures. This often happens with generic function specializations or overloads that create ambiguity.",
+      "fix_strategies": [
+        {
+          "strategy": "ensure",
+          "description": "Ensure all declarations of the same function have matching signatures"
+        },
+        {
+          "strategy": "remove",
+          "description": "Remove or rename conflicting declarations"
+        }
+      ],
+      "keywords": [
+        "conflicting",
+        "declarations",
+        "function"
+      ]
+    },
+    {
+      "code": "BSC-E0904",
+      "diagnostic_name": "err_extended_type_not_generic_typealias",
+      "severity": "error",
+      "message_template": "extended type of a BSC member function cannot be a generic typealias",
+      "category": "generics_constexpr",
+      "cause": "Member functions cannot be defined for generic type aliases. They must be defined for the actual type.",
+      "fix_strategies": [
+        {
+          "strategy": "define",
+          "description": "Define the member function on the concrete type, not the typealias"
+        }
+      ],
+      "keywords": [
+        "extended",
+        "function",
+        "generic",
+        "member",
+        "not",
+        "type",
+        "typealias"
+      ]
+    },
+    {
+      "code": "BSC-E0905",
+      "diagnostic_name": "err_generic_typealias_not_within_function",
+      "severity": "error",
+      "message_template": "BSC generic typealias cannot be declared within a function",
+      "category": "generics_constexpr",
+      "cause": "Generic type aliases must be declared at file scope, not inside function bodies.",
+      "fix_strategies": [
+        {
+          "strategy": "move",
+          "description": "Move the generic typealias to file scope"
+        }
+      ],
+      "keywords": [
+        "declared",
+        "function",
+        "generic",
+        "not",
+        "typealias",
+        "within"
+      ]
+    },
+    {
+      "code": "BSC-E0906",
+      "diagnostic_name": "err_constexpr_func_unsupported",
+      "severity": "error",
+      "message_template": "BSC constexpr function does not support %0",
+      "category": "generics_constexpr",
+      "cause": "BSC's `constexpr` functions are evaluated at compile time and support only a limited subset of operations. Features like dynamic allocation, I/O, and certain control flow are not available.",
+      "fix_strategies": [
+        {
+          "strategy": "remove",
+          "description": "Remove the unsupported feature from the constexpr function"
+        },
+        {
+          "strategy": "if",
+          "description": "If the feature is necessary, make the function a regular (non-constexpr) function"
+        }
+      ],
+      "keywords": [
+        "constexpr",
+        "func",
+        "function",
+        "support",
+        "unsupported"
+      ]
+    },
+    {
+      "code": "BSC-E0907",
+      "diagnostic_name": "err_constexpr_func_unsupported_type",
+      "severity": "error",
+      "message_template": "BSC constexpr function does not support type %0",
+      "category": "generics_constexpr",
+      "cause": "The type used in a constexpr function is not supported for compile-time evaluation. Only simple types (integers, floats, etc.) are supported in constexpr contexts.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use a supported type, or make the function non-constexpr"
+        }
+      ],
+      "keywords": [
+        "constexpr",
+        "func",
+        "function",
+        "support",
+        "type",
+        "unsupported"
+      ]
+    },
+    {
+      "code": "BSC-E0908",
+      "diagnostic_name": "err_constexpr_var_unsupported_type",
+      "severity": "error",
+      "message_template": "BSC constexpr variable does not support type %0",
+      "category": "generics_constexpr",
+      "cause": "A `constexpr` variable was declared with a type that cannot be evaluated at compile time.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use a compile-time-compatible type (e.g., `int`, `float`, `char`)"
+        }
+      ],
+      "keywords": [
+        "constexpr",
+        "support",
+        "type",
+        "unsupported",
+        "var",
+        "variable"
+      ]
+    },
+    {
+      "code": "BSC-E0909",
+      "diagnostic_name": "err_constexpr_if_cond_expr_unsupported_type",
+      "severity": "error",
+      "message_template": "BSC constexpr if condition expression does not support type %0",
+      "category": "generics_constexpr",
+      "cause": "The condition in a `constexpr if` statement uses a type that cannot be evaluated at compile time. The condition must be a compile-time constant of a supported type.",
+      "fix_strategies": [
+        {
+          "strategy": "ensure",
+          "description": "Ensure the condition is a compile-time integer or boolean expression"
+        }
+      ],
+      "keywords": [
+        "cond",
+        "condition",
+        "constexpr",
+        "expr",
+        "expression",
+        "support",
+        "type",
+        "unsupported"
+      ]
+    },
+    {
+      "code": "BSC-E1101",
+      "diagnostic_name": "err_no_instance_member",
+      "severity": "error",
+      "message_template": "no instance member named %0 in %1; did you mean to use '::' instead of '%select{.|->}2'?",
+      "category": "member_functions",
+      "cause": "You used `.` or `->` to access a member that doesn't exist as an instance member of the type. It may be a static/type-level function that should be called with `::` instead.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use `::` for type-level (static) functions"
+        },
+        {
+          "strategy": "use",
+          "description": "Use `.` or `->` only for instance members"
+        }
+      ],
+      "example": {
+        "bad_code": "struct Foo { int x; };\nFoo Foo_create() { Foo f = { .x = 0 }; return f; }\n\nvoid f() {\n    Foo obj = { .x = 1 };\n    Foo new_obj = obj.create();  // ERROR: no instance member 'create'\n}",
+        "good_code": "void f_fixed() {\n    Foo new_obj = Foo::create();  // OK: type-level call\n}"
+      },
+      "keywords": [
+        "instance",
+        "instead",
+        "member",
+        "named",
+        "select"
+      ]
+    },
+    {
+      "code": "BSC-E1102",
+      "diagnostic_name": "err_attribute_redundant_pointers",
+      "severity": "error",
+      "message_template": "(EnhanceC) %0 attribute applied to function with more than one pointer arguments, please specify the index argument in the %0 attribute",
+      "category": "member_functions",
+      "cause": "A BSC attribute was applied to a function that has multiple pointer parameters, but the attribute doesn't specify which pointer it applies to. When there is ambiguity, you must use the index argument.",
+      "fix_strategies": [
+        {
+          "strategy": "specify",
+          "description": "Specify the pointer index in the attribute to disambiguate"
+        }
+      ],
+      "keywords": [
+        "applied",
+        "argument",
+        "arguments",
+        "attribute",
+        "enhancec",
+        "function",
+        "index",
+        "pointer"
+      ]
+    },
+    {
+      "code": "BSC-E1103",
+      "diagnostic_name": "err_attribute_zero_pointer",
+      "severity": "error",
+      "message_template": "(EnhanceC) %0 attribute: The number of pointer arguments index cannot be zero",
+      "category": "member_functions",
+      "cause": "The pointer index argument in a BSC attribute is 1-based. Passing `0` as the index is invalid.",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use index `1` for the first pointer parameter, `2` for the second, etc."
+        }
+      ],
+      "keywords": [
+        "arguments",
+        "attribute",
+        "enhancec",
+        "index",
+        "number",
+        "pointer",
+        "zero"
+      ]
+    },
+    {
+      "code": "BSC-E1201",
+      "diagnostic_name": "err_unsupport_overload_fun",
+      "severity": "error",
+      "message_template": "function unsupport overload",
+      "category": "operator_overload",
+      "cause": "The function you are trying to overload does not support operator overloading. Only specific operator functions can be overloaded in BSC.",
+      "fix_strategies": [
+        {
+          "strategy": "check",
+          "description": "Check that you are overloading a supported operator"
+        }
+      ],
+      "keywords": [
+        "fun",
+        "function",
+        "overload",
+        "unsupport"
+      ]
+    },
+    {
+      "code": "BSC-E1202",
+      "diagnostic_name": "err_unsupport_overload_type",
+      "severity": "error",
+      "message_template": "unsupported operator type",
+      "category": "operator_overload",
+      "cause": "The operator type you are trying to overload is not supported by BSC. BSC supports overloading for a specific set of operators (arithmetic, comparison, etc.).",
+      "fix_strategies": [
+        {
+          "strategy": "use",
+          "description": "Use a supported operator type for overloading"
+        }
+      ],
+      "keywords": [
+        "operator",
+        "overload",
+        "type",
+        "unsupport",
+        "unsupported"
+      ]
+    },
+    {
+      "code": "BSC-E1203",
+      "diagnostic_name": "err_operator_overload_needs_point",
+      "severity": "error",
+      "message_template": "overloaded function %0 first parameter or return type must be struct or enumeration pointer type",
+      "warning_flag": "-Wderef-nullable",
+      "group_path": [
+        "BSCSafetyCheck",
+        "BSCNullability",
+        "DerefNullable"
+      ],
+      "category": "operator_overload",
+      "cause": "Operator overloads in BSC must involve user-defined types. The first parameter or return type of the overloaded operator function must be a pointer to a struct or enum type.",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for err_operator_overload_needs_point]"
+        }
+      ],
+      "example": {
+        "bad_code": "int operator_add(int a, int b) {  // ERROR: must be struct/enum pointer type\n    return a + b;\n}",
+        "good_code": "struct Vec2 { int x; int y; };\n\nstruct Vec2 *_Owned operator_add(struct Vec2 *a, struct Vec2 *b) {  // OK\n    struct Vec2 *_Owned result = safe_malloc<struct Vec2>((struct Vec2){ .x = 0, .y = 0 });\n    result->x = a->x + b->x;\n    result->y = a->y + b->y;\n    return result;\n}"
+      },
+      "keywords": [
+        "enumeration",
+        "first",
+        "function",
+        "needs",
+        "operator",
+        "overload",
+        "overloaded",
+        "parameter"
+      ]
+    },
+    {
+      "code": "BSC-W0001",
+      "diagnostic_name": "warn_unknown_bsc_diag_option",
+      "severity": "warning",
+      "message_template": "unknown %select{warning|remark|error}0 option '%1'%select{|; did you mean '%3'?}2",
+      "category": "unknown",
+      "cause": "[TODO: Document cause for warn_unknown_bsc_diag_option]",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for warn_unknown_bsc_diag_option]"
+        }
+      ],
+      "keywords": [
+        "bsc",
+        "diag",
+        "error",
+        "option",
+        "remark",
+        "select",
+        "unknown",
+        "warning"
+      ]
+    },
+    {
+      "code": "BSC-W0501",
+      "diagnostic_name": "warn_type_has_not_impl_trait",
+      "severity": "warning",
+      "message_template": "expected a pointer type which has implemented %0, found %1",
+      "warning_flag": "-Wbsc-trait-missing",
+      "group_path": [
+        "BSCTraitMissing"
+      ],
+      "category": "traits",
+      "cause": "[TODO: Document cause for warn_type_has_not_impl_trait]",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for warn_type_has_not_impl_trait]"
+        }
+      ],
+      "keywords": [
+        "expected",
+        "has",
+        "impl",
+        "implemented",
+        "not",
+        "pointer",
+        "trait",
+        "type"
+      ]
+    },
+    {
+      "code": "BSC-W0601",
+      "diagnostic_name": "warn_destructor_execute",
+      "severity": "warning",
+      "message_template": "the destructor may be not executed",
+      "warning_flag": "-Wbsc-owned-struct",
+      "group_path": [
+        "BSCOwnedStruct"
+      ],
+      "category": "owned_struct",
+      "cause": "[TODO: Document cause for warn_destructor_execute]",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for warn_destructor_execute]"
+        }
+      ],
+      "keywords": [
+        "destructor",
+        "execute",
+        "executed"
+      ]
+    },
+    {
+      "code": "BSC-W1101",
+      "diagnostic_name": "warn_attribute_no_pointers",
+      "severity": "warning",
+      "message_template": "(EnhanceC) %0 attribute applied to function with no pointer arguments",
+      "category": "member_functions",
+      "cause": "[TODO: Document cause for warn_attribute_no_pointers]",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for warn_attribute_no_pointers]"
+        }
+      ],
+      "keywords": [
+        "applied",
+        "arguments",
+        "attribute",
+        "enhancec",
+        "function",
+        "pointer",
+        "pointers"
+      ]
+    },
+    {
+      "code": "BSC-W1102",
+      "diagnostic_name": "warn_attribute_function_pointer",
+      "severity": "warning",
+      "message_template": "(EnhanceC) %0 attribute applied to function and function type pointer",
+      "category": "member_functions",
+      "cause": "[TODO: Document cause for warn_attribute_function_pointer]",
+      "fix_strategies": [
+        {
+          "strategy": "review",
+          "description": "[TODO: Document fix for warn_attribute_function_pointer]"
+        }
+      ],
+      "keywords": [
+        "applied",
+        "attribute",
+        "enhancec",
+        "function",
+        "pointer"
+      ]
+    }
+  ]
+}
