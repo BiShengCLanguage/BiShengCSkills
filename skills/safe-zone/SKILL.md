@@ -1,6 +1,6 @@
 ---
 name: bsc-safe-zone
-description: "BiSheng C safe zones. When you need to understand _Safe functions, _Safe blocks, _Unsafe escape blocks, safe zone restrictions (no raw pointers, no &, no goto, no ++/--), or mixed safe/unsafe patterns, use this Skill."
+description: "BiSheng C safe zones. When you need to understand _Safe functions, _Safe blocks, _Unsafe escape blocks, safe zone restrictions (initialization rules, pointer restrictions, type cast limits, ++/-- semantics), or mixed safe/unsafe patterns, use this Skill."
 ---
 
 # BiSheng C Safe Zones Skill
@@ -11,83 +11,129 @@ Designate code regions where the compiler enforces memory safety. Default contex
 
 ## 2. Syntax
 
+`_Safe` / `_Unsafe` can modify: function declarations, function definitions, function pointers, statements, and parenthesized expressions.
+
 ```c
-// Safe function
-_Safe int add(int a, int b) {
-    return a + b;
+_Safe int add(int a, int b) { return a + b; }  // safe function
+
+void example(void) {
+    _Safe { int x = 10; }         // safe block
+    _Safe int y = 1;              // safe statement
 }
 
-// Safe block
-_Safe {
-    int x = 10;
-    int y = x + 1;
-}
-
-// Unsafe escape inside safe code
 _Safe void process(const int *_Borrow v) {
-    _Unsafe {
-        printf("%d\n", *v);  // printf is unsafe (variadic)
-    }
+    _Unsafe { printf("%d\n", *v); }  // unsafe escape (printf is variadic)
+    _Unsafe int c = 1;               // unsafe statement
+    char d = _Unsafe((char)c);       // unsafe expression
 }
 ```
 
+Cannot use `_Safe`/`_Unsafe` on: global variables, type declarations outside functions, or `typedef` (except function pointer typedefs).
+
 ## 3. Restrictions (compiler-enforced)
 
-In `_Safe` zones, the following are **forbidden**:
+In `_Safe` zones:
 
-- **No raw pointers** — use `_Owned` or `_Borrow`
-- **No `&`** — use `&_Const` or `&_Mut`
-- **No `goto`**, no labels
-- **No `++` or `--`** — use `x += 1`
+### Pointer operations
+- **No `&` address-of** — use `&_Const` or `&_Mut` to take borrows. Exception: taking the address of a function is allowed.
+- **No raw pointer dereference** (`*rawptr`, `rawptr->field`) — `_Owned` and `_Borrow` pointer dereference is OK
+- **No pointer category casts** — no casting between `_Owned`/`_Borrow`/raw pointers, no pointer-to-integer or integer-to-pointer casts. Exception: `T *_Owned` can be explicitly cast to `void *_Owned`.
+- **No casts between pointers of different pointed-to types**
+- **`nullptr` required** — `NULL` is forbidden in safe zones; use `nullptr` to initialize or compare pointers
+
+### Raw pointer params/returns are allowed in signatures
+A `_Safe` function **may** have raw pointer params/returns (`_Safe int *foo(int a)` is valid). The restrictions apply to *operations on* pointers inside the safe zone, not their presence in signatures.
+
+### Initialization rules
+- **Pointer types** (raw, `_Owned`, `_Borrow`, function pointers) **must** be initialized (use `nullptr` if needed)
+- **Structs/unions containing pointer fields** must be initialized with **complete** initializer lists (no partial init)
+- **Basic types** (`int`, `float`, `char`, `_Bool`) and structs/unions **without** pointer fields **may** be left uninitialized or partially initialized
+
+```c
+_Safe {
+    int a;                            // ok: basic type
+    int *p;                           // error: pointer must be initialized
+    int *p1 = nullptr;                // ok
+    struct HasPtr hp = {nullptr, 0};  // ok: complete init
+    struct HasPtr hp2 = {0};          // error: partial init (has pointer field)
+}
+```
+
+### Increment/decrement (`++`/`--`)
+`++` and `--` are **allowed**, but their result type is `void`. You can use them as standalone statements, but you cannot use the expression's value.
+
+```c
+_Safe void foo(void) {
+    int a = 0;
+    a++;                // ok: side-effect only
+    int x = a++;        // error: result is void
+    for (int i = 0; i < 10; i++) {}  // ok: iteration clause
+}
+```
+
+### Other restrictions
 - **No inline assembly**
-- **No union member access**
-- **No raw pointer dereference** (`*rawptr`, `rawptr->field`)
+- **No union member access** (`.` read or write) — but unions can be declared, initialized, and passed as arguments
 - **No calling unsafe functions** — must wrap in `_Unsafe {}`
-- **Variables must be initialized** at declaration
-- **Complete initializer lists** (no partial init)
-- **No narrowing casts** (`long`→`int`, `double`→`float`), constants excepted
-- **No pointer type casts** (except `T *_Owned`→`void *_Owned`)
-- Empty params: `_Safe int f(void)` — `void` required, not `_Safe int f()`
-- **No variadic params** in `_Safe` functions
-- **No mutable globals** in safe zones (read-only globals OK)
-- Switch: `case`/`default` only in first-level block, no variable declarations in switch block
+- **No narrowing implicit casts** (`long` to `int`, `double` to `float`, `int` to `float`) — explicit cast required. Compile-time constants that fit the target type are exempt.
+- **No float-to-integer casts** (even explicit)
+- **Empty params require `void`**: `_Safe void f(void)` — not `_Safe void f()`
+- **No variadic params** — unless the function has `__attribute__((format(...)))`:
+  ```c
+  _Safe int foo(int a, ...);  // error
+  __attribute__((format(printf, 1, 2)))
+  _Safe int bar(const char *fmt, ...);  // ok (but va_start/va_arg/va_end still forbidden inside the body)
+  ```
+- **Globals**: only read-only borrows (`&_Const`) of global variables allowed; no mutable borrows (`&_Mut`) of globals
+- **Switch**: `case`/`default` only in first-level block after `switch`; no variable declarations in that first-level block
 
-## 4. Complete Example
+## 4. Mixed-Mode Declarations (_Safe/_Unsafe overloading)
+
+The same function can have both `_Safe` and `_Unsafe` declarations:
+
+```c
+_Unsafe int* foo(int* p);              // unsafe version
+_Safe int* _Owned foo(int* _Owned p);  // safe version: adds _Owned
+```
+
+- `_Safe` declaration may **add** `_Owned`/`_Borrow` to raw pointer params/returns
+- Must **not remove** qualifiers present in the `_Unsafe` declaration, nor swap `_Owned` for `_Borrow`
+- In safe context, only `_Safe` overload is callable. In unsafe context, `_Safe` version preferred when types match.
+
+## 5. Function Pointer Rules
+
+- `_Safe` function pointers can only be assigned from functions that have a `_Safe` declaration
+- `_Unsafe` function pointers can be assigned from either `_Safe` or `_Unsafe` functions (if types are compatible)
+
+```c
+_Safe void safe_fn(void);
+_Unsafe void unsafe_fn(void);
+
+_Safe void (*sp)(void) = nullptr;
+sp = safe_fn;    // ok
+sp = unsafe_fn;  // error: no _Safe declaration available
+```
+
+## 6. Complete Example
 
 ```c
 #include <stdio.h>
-#include <stdlib.h>
+#include "bishengc_safety.hbs"
 
-_Safe int add(int a, int b) {
-    int result = a + b;
-    return result;
-}
+_Safe int add(int a, int b) { return a + b; }
 
 _Safe int readBorrow(const int *_Borrow ref) {
-    return *ref;  // OK: dereferencing _Borrow is safe
-}
-
-_Safe void writeBorrow(int *_Borrow ref, int value) {
-    *ref = value;
-}
-
-_Safe int safePrint(const int *_Borrow val) {
-    _Unsafe {
-        printf("value = %d\n", *val);
-    }
-    return *val;
+    return *ref;  // ok: _Borrow dereference is safe
 }
 
 void mixedFunction(void) {
-    int* raw = (int*)malloc(sizeof(int));
+    int *raw = (int *)malloc(sizeof(int));
     *raw = 100;
-
     _Safe {
         int x = 42;
-        int y = 0;
+        int y;  // ok: basic type, no init needed
         const int *_Borrow ref = &_Const x;
         y = readBorrow(ref);
-
         _Unsafe {
             printf("from safe zone: %d\n", y);
             free(raw);
@@ -95,17 +141,10 @@ void mixedFunction(void) {
     }
 }
 
-int main() {
-    int a = 10;
-    int b = 20;
-
-    _Safe {
-        int sum = add(a, b);
-        const int *_Borrow r = &_Const sum;
-        safePrint(r);
-    }
-
-    mixedFunction();
+_Safe int main(void) {
+    int sum = add(10, 20);
+    const int *_Borrow r = &_Const sum;
+    _Unsafe { printf("sum = %d\n", *r); }
     return 0;
 }
 ```

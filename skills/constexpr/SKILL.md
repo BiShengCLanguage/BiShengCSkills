@@ -14,9 +14,10 @@ int arr[SIZE];  // OK: constexpr as array size
 _Static_assert(SIZE == 1024, "wrong");
 ```
 
-- Must be initialized. Integer/bool/char types only (no float/double)
+- Must be initialized at definition. Integer/bool/char types only (no float/double)
 - Cannot be modified after definition
-- Initializer must be a constant expression
+- Initializer must be a constant expression (literal, other constexpr, constexpr function call)
+- constexpr pointers can only point to global or static variables
 
 ## 2. constexpr Functions
 
@@ -30,8 +31,13 @@ constexpr int result = factorial(5);  // evaluated at compile time
 int runtime_result = factorial(x);    // also works at runtime
 ```
 
-- Params and return: compile-time computable types only
+**Rules:**
+- Params and return: compile-time computable types only (no void return)
 - Body: no static vars, no non-constexpr calls, no external non-constexpr vars, no asm
+- **Declaration and definition must both have `constexpr`, or neither** -- mismatch is an error
+- Function parameters cannot use constexpr: `int foo(constexpr int a)` is an error
+- Cannot be `_Async` functions
+- Cannot be variadic functions
 - Can modify constexpr generic functions: `constexpr int f<T>() { ... }`
 - Can modify static member functions: `constexpr int int::foo() { ... }`
 - Cannot modify instance member functions (this pointer is not constexpr)
@@ -54,9 +60,14 @@ void process<T>(T value) {
 }
 ```
 
-- Condition must be compile-time boolean constant expression
-- False branch is discarded (not type-checked in generic context)
-- Enables type-specialized behavior without overloading
+**Condition rules:**
+- Must be a compile-time constant expression
+- Type must be implicitly convertible to bool: bool, integer, or char are valid
+- float/double conditions are **not allowed**: `if constexpr(5.0)` is an error
+
+**Discarded (false) branch rules:**
+- In **generic context**: discarded branch is not instantiated, so no post-instantiation semantic checking occurs (allows type-dependent code that would be invalid for some T)
+- In **non-generic context**: discarded branch **is** fully type-checked -- it is only dead-code-eliminated, not skipped for semantic analysis
 
 ## 4. Type Traits
 

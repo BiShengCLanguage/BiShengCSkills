@@ -21,6 +21,8 @@ _Trait Printable {
 - Only function declarations inside `_Trait` body (no implementations)
 - First param must be `This* this` — named exactly `this`
 - `_Trait` definitions only at top-level scope
+- Empty traits are allowed: `_Trait T {};`
+- Cannot extend member functions on a trait type: `void _Trait T::method(_Trait T* this)` is an error
 
 ## 3. Implementing Traits
 
@@ -40,6 +42,12 @@ _Impl _Trait Printable for struct Circle;  // all methods must exist before this
 - Can implement for primitives: `_Impl _Trait Printable for int;`
 - Can implement for typedef-ed types
 - All trait methods must be defined **before** the `_Impl` statement
+- Cannot implement trait for a trait type: `_Impl _Trait T for _Trait T;` is an error
+- Cannot implement trait for an instantiated generic struct type:
+  ```c
+  struct G<T> {};
+  _Impl _Trait Printable for struct G<int>;  // ERROR: cannot _Impl _Trait for an instantiated type
+  ```
 
 ## 4. Trait Pointers (Dynamic Dispatch)
 
@@ -63,8 +71,12 @@ int main() {
 
 - Only pointer form: `_Trait T* p;` (NOT `_Trait T p;`)
 - Trait pointers cannot be dereferenced with `*`
-- Can cast: `int* q = (int*)p;` (explicit only)
-- Can compare: `p == NULL`, `p1 == p2`
+- Can cast to concrete type: `int* q = (int*)p;` (explicit only, no implicit)
+- Can cast to `void*`: `void* v = (void*)p;` — but `void*` CANNOT be cast back to trait pointer
+- Comparison limited to `==` and `!=` only:
+  - `p == NULL` / `p != NULL` — OK
+  - `p1 == p2` — OK if same trait type; warning if different trait types
+  - `p == concretePtr` — OK if concrete type implements the trait; warning if it does not
 - Can typedef: `typedef _Trait Printable { ... } P;`
 
 ## 5. Generic Traits
@@ -109,14 +121,27 @@ int int::value(int* this) {
 }
 _Impl _Trait Describable for int;
 
+// Dynamic dispatch through trait pointer
+void showInfo(_Trait Describable* obj) {
+    obj->describe();                        // vtable dispatch
+    printf("  value = %d\n", obj->value()); // vtable dispatch
+}
+
 int main() {
     struct Circle c = {.radius = 5.0};
-    c.describe();
-    printf("area ~ %d\n", c.value());
-
     int x = 42;
-    x.describe();
-    printf("value = %d\n", x.value());
+
+    _Trait Describable* p = &c;  // implicit conversion
+    showInfo(p);                 // "Circle with radius 5.0" / "value = 75"
+
+    p = &x;                      // reassign to different implementing type
+    showInfo(p);                 // "Integer: 42" / "value = 42"
+
+    // Compare trait pointers
+    _Trait Describable* p2 = &c;
+    if (p != p2) {
+        printf("Different objects\n");
+    }
     return 0;
 }
 ```

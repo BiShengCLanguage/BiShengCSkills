@@ -1,25 +1,21 @@
 ---
 name: bsc-ownership
-description: "BiSheng C ownership system. When you need to understand _Owned pointers, move semantics, _Owned structs, destructors, RAII, _Public access, _Nullable, or ownership transfer rules, use this Skill."
+description: "BiSheng C ownership system. When you need to understand _Owned pointers, move semantics, _Owned structs, destructors, RAII, _Public/_Private access, _Nullable, safe_malloc/safe_free, or ownership transfer rules, use this Skill."
 ---
 
 # BiSheng C Ownership Skill
 
-## ⚠️ CRITICAL: `_Owned` Syntax
+## CRITICAL: `_Owned` Syntax
 
 **`_Owned` goes AFTER the `*`, not before the type.** It is a pointer qualifier, like `const`.
 
 ```c
-// ✅ CORRECT — _Owned after *
-char *_Owned msg = (char *_Owned)malloc(14);
-int *_Owned p = (int *_Owned)malloc(sizeof(int));
+// CORRECT — _Owned after *
+int *_Owned p = safe_malloc(42);
 
-// ❌ WRONG — _Owned before type (THIS DOES NOT COMPILE)
-_Owned char* msg = malloc(14);
-_Owned int* p = malloc(sizeof(int));
+// WRONG — _Owned before type (DOES NOT COMPILE)
+_Owned int* p = safe_malloc(42);
 ```
-
-**Also:** `malloc()` returns raw `void*` — you MUST cast to `T *_Owned`: `(char *_Owned)malloc(n)`.
 
 Same rule applies to `_Borrow`: write `int *_Borrow`, not `_Borrow int*`.
 
@@ -27,117 +23,140 @@ Same rule applies to `_Borrow`: write `int *_Borrow`, not `_Borrow int*`.
 
 Move semantics for compile-time memory safety. Prevents use-after-free and double-free at compile time. Once ownership transfers, the original variable is dead.
 
-## 2. Owned Pointers
+Use `safe_malloc` / `safe_free` (from `bishengc_safety.hbs`) as the idiomatic allocation APIs. Raw `malloc`/`free` require `_Unsafe` context and explicit casts.
+
+## 2. safe_malloc / safe_free
+
+Signatures: `T *_Owned safe_malloc<T>(T t)` — allocates, initializes to `t`, returns `T *_Owned`.
+`void safe_free(void *_Owned)` — frees an `_Owned` pointer. No cast needed for `safe_malloc`:
+```c
+#include "bishengc_safety.hbs"
+_Safe void example(void) {
+    int *_Owned p = safe_malloc(42);       // no cast needed
+    safe_free((void *_Owned)p);            // must cast to void *_Owned
+}
+```
+
+**malloc/free alternative** (requires `_Unsafe` context):
+```c
+_Unsafe {
+    int *_Owned p = (int *_Owned)malloc(sizeof(int));  // raw->owned cast
+    *p = 42;
+    free((void *_Owned)p);
+}
+```
+
+## 3. Owned Pointers
 
 ```c
-#include <stdlib.h>
+#include "bishengc_safety.hbs"
 
 int *_Owned create(int val) {
-    int *_Owned p = (int *_Owned)malloc(sizeof(int));  // raw→owned requires cast
-    *p = val;
-    return p;  // ownership transfers to caller
+    return safe_malloc(val);  // ownership transfers to caller
 }
 
-int readAndFree(int *_Owned p) {
+void consume(int *_Owned p) {
     int val = *p;
-    free((void *_Owned)p);  // owned→raw cast to free
-    return val;
+    safe_free((void *_Owned)p);
 }
 
-int *_Owned transform(int *_Owned input) {
-    int val = *input;
-    free((void *_Owned)input);  // free old
-    int *_Owned result = (int *_Owned)malloc(sizeof(int));
-    *result = val * 2;
-    return result;  // return new owned pointer
-}
-
-int main() {
+_Safe int main(void) {
     int *_Owned p = create(21);
-    int *_Owned p2 = transform(p);
-    // p is now dead — cannot use it
-    int result = readAndFree(p2);
-    // p2 is now dead
-
-    // Nullable owned pointer
-    int *_Owned _Nullable maybe = nullptr;
+    int *_Owned p2 = p;        // ownership MOVES; p is now dead
+    consume(p2);               // p2 is now dead
+    int *_Owned _Nullable maybe = nullptr;  // nullable owned pointer
     return 0;
 }
 ```
 
-## 3. Rules
+## 4. Multi-level Pointer Release (Inner to Outer)
 
-- **`_Owned` goes after the `*`**: write `int *_Owned`, NOT `_Owned int*`. It is a pointer qualifier (like `const`), not a type prefix
+```c
+#include "bishengc_safety.hbs"
+struct S { int *_Owned p; int *_Owned q; };
+
+_Safe void foo(void) {
+    // Multi-level pointer: free inner first, then outer
+    int *_Owned inner = safe_malloc(1);
+    int *_Owned *_Owned pp = safe_malloc(inner);
+    safe_free((void *_Owned)*pp);
+    safe_free((void *_Owned)pp);
+
+    // Struct with _Owned members: free members first, then struct
+    struct S s = {.p = safe_malloc(2), .q = safe_malloc(3)};
+    struct S *_Owned sp = safe_malloc(s);
+    safe_free((void *_Owned)sp->p);
+    safe_free((void *_Owned)sp->q);
+    safe_free((void *_Owned)sp);
+}
+```
+
+## 5. Rules
+
+- **`_Owned` goes after the `*`**: write `int *_Owned`, NOT `_Owned int*`
 - `_Owned` types have **move semantics**: assignment, passing, returning **transfers** ownership
 - After transfer, the original variable is **dead** — any use is a compile error
 - Before scope ends, `_Owned` variables **must** have ownership released
-- Release by: (a) passing to function taking `_Owned`, (b) casting to `void *_Owned` and freeing, (c) returning
+- Release by: (a) passing to function taking `_Owned`, (b) `safe_free((void *_Owned)p)`, (c) returning
 - No pointer arithmetic on `_Owned` pointers (no `+`, `-`, `[]`, `++`, `--`)
-- `_Owned` cannot be: global variables, union members
-- Can be array elements, but cannot transfer individual elements
-- Type matching is strict: `int *_Owned` != `int *`
-- Converting between `_Owned` and raw requires explicit cast in `_Unsafe` context
-- Exception: `T *_Owned` → `void *_Owned` is allowed in safe context
+- Comparison operators (`==`, `!=`, `<`, etc.) are allowed
+- `_Owned` **CANNOT** be: global variables, union members, **array elements** (including structs with `_Owned` members)
+- Type matching is strict: `int *_Owned` != `int *` — no implicit conversion between them
+- Explicit cast between `_Owned` and raw pointers requires `_Unsafe` context
+- Exception: `T *_Owned` -> `void *_Owned` is allowed in safe context
 - `_Nullable`: `int *_Owned _Nullable p = nullptr;` allows null owned pointers
+- Logical operators (`!`, `&&`, `||`) work on `_Owned` pointers (null checks, no ownership consumed)
+- `_Owned` pointers can be conditions in `if`/`while`/`do-while`/`for`/ternary, but NOT `switch`
+- Implicit `_Owned` -> `_Bool` conversion is allowed (does not consume ownership)
 
-## 4. Owned Structs (RAII)
+## 6. _Safe / _Unsafe Context
+
+- `_Safe` functions use `safe_malloc`/`safe_free`; raw `malloc`/`free` require `_Unsafe` blocks
+- Functions without `_Safe` or `_Unsafe` are non-safe by default
+
+## 7. Owned Structs (RAII)
 
 ```c
+#include "bishengc_safety.hbs"
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 _Owned struct Buffer {
-_Public:
-    char *ptr;
+_Private:                    // _Private is the DEFAULT access modifier
+    char *_Owned data;
     int len;
+_Public:
     int cap;
-
-    ~Buffer(Buffer this) {
-        if (this.ptr) {
-            printf("~Buffer: freeing %d bytes\n", this.cap);
-            free(this.ptr);
-        }
+    ~Buffer(Buffer this) {   // destructor — auto-called at scope end
+        safe_free((void *_Owned)this.data);  // _Owned members MUST be freed here
     }
 };
 
-Buffer Buffer::new(int capacity) {
-    char *p = (char*)malloc(capacity);
-    Buffer b = { .ptr = p, .len = 0, .cap = capacity };
-    return b;
+Buffer Buffer::new(int capacity, char init) {
+    return (Buffer){ .data = safe_malloc(init), .len = 0, .cap = capacity };
 }
 
-void Buffer::append(Buffer* this, const char* data, int datalen) {
-    if (this->len + datalen <= this->cap) {
-        memcpy(this->ptr + this->len, data, datalen);
-        this->len += datalen;
-    }
-}
-
-int main() {
+_Safe int main(void) {
     {
-        Buffer buf = Buffer::new(256);
-        buf.append("hello", 5);
-        // ~Buffer automatically called here when buf goes out of scope
-    }
+        Buffer buf = Buffer::new(256, '\0');
+    }   // ~Buffer auto-called here
     {
-        Buffer buf1 = Buffer::new(128);
-        Buffer buf2 = buf1;  // ownership MOVES from buf1 to buf2
-        // buf1 is now dead — only ~Buffer(buf2) is called
+        Buffer buf1 = Buffer::new(128, '\0');
+        Buffer buf2 = buf1;  // MOVE: buf1 is dead, only ~Buffer(buf2) called
     }
     return 0;
 }
 ```
 
-### 4.1 Owned Struct Rules
+### 7.1 Owned Struct Rules
 
 - `_Owned struct` has move semantics as a whole
 - Destructor syntax: `~TypeName(TypeName this) { ... }` inside the struct body
-- Destructor is called automatically when the variable goes out of scope (if not moved)
-- `_Public:` makes fields accessible outside the struct
-- Each `_Owned` field in a struct is tracked independently
+- Destructor is called automatically when variable goes out of scope (if not moved)
+- **Destructor cannot be explicitly called by the user** — only the compiler invokes it
+- If no destructor is defined, the compiler provides a default one
+- `_Owned` pointer members inside the struct **must** be manually freed in the destructor
+- **Access modifiers**: `_Private` (default) and `_Public` — only members/functions inside the struct body can access `_Private` members; extension functions and external code can only access `_Public` members
+- **Partial move is prohibited**: at scope end, an `_Owned struct` must be either fully owned (nothing moved out) or entirely moved as a whole. Moving individual `_Owned` members while keeping the struct causes a compile error
+- Global `_Owned struct` variables do not have their destructors called (including function-local `static`)
 
-> For borrowing (non-owning references), see `bsc-borrowing` Skill
-> For safe zones with owned types, see `bsc-safe-zone` Skill
-> For ownership errors (BSC-E01xx), see `bsc-errors` Skill
-> For owned struct errors (BSC-E06xx), see `bsc-errors` Skill
+> See also: `bsc-borrowing`, `bsc-safe-zone`, `bsc-errors` Skills
