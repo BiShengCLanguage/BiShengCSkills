@@ -103,24 +103,45 @@ fi
 
 # --- Helper: concatenate all skills into single doc ---
 concat_all_skills() {
-    echo "# BiSheng C (BSC) Language Reference"
-    echo ""
-    echo "> BiSheng C is a superset of C with Rust-inspired memory safety, traits, generics, and async/await."
-    echo "> Source files: \`.cbs\`. Header files: \`.hbs\`. Compiler: \`clang file.cbs -o output\`."
-    echo ""
-    echo "## CRITICAL: Pointer Qualifier Placement"
-    echo ""
-    echo "\`_Owned\` and \`_Borrow\` go AFTER the \`*\`, never before the type:"
-    echo "- CORRECT: \`char *_Owned p = (char *_Owned)malloc(n);\`"
-    echo "- CORRECT: \`const int *_Borrow r = &_Const x;\`"
-    echo "- WRONG: \`_Owned char* p\` — does not compile"
-    echo "- WRONG: \`_Borrow int* r\` — does not compile"
-    echo ""
-    echo "\`malloc()\` must be cast: \`(T *_Owned)malloc(n)\`. \`free()\` must cast: \`free((void *_Owned)p)\`."
-    echo ""
-    echo "---"
-    echo ""
+    # === HEADER: Critical rules at top (primacy effect) ===
+    cat << 'HEADER_EOF'
+# BiSheng C (BSC) Language Reference
 
+> BiSheng C is a superset of C with Rust-inspired memory safety, traits, generics, and async/await.
+> Source files: `.cbs`. Header files: `.hbs`. Compiler: `clang file.cbs -o output`.
+
+## CRITICAL: Pointer Qualifier Grammar — Read Before Writing Any BSC Code
+
+`_Owned` and `_Borrow` are **pointer qualifiers** (like `const`). They go AFTER `*`, NEVER before the type.
+
+Grammar: `base_type *qualifier variable_name`
+
+Think of it like `const`: you write `int *const p`, not `const int* p` for a const pointer. Same rule: write `int *_Owned p`, not `_Owned int* p`.
+
+Correct:
+```c
+char *_Owned msg = (char *_Owned)malloc(14);
+int *_Owned p = (int *_Owned)malloc(sizeof(int));
+const int *_Borrow r = &_Const x;
+int *_Borrow mr = &_Mut y;
+free((void *_Owned)p);
+```
+
+Wrong — causes compilation error "unknown type name '_Owned'":
+```c
+_Owned char* msg = malloc(14);     // WRONG
+_Borrow int* r = &_Const x;       // WRONG
+```
+
+If you ever write `_Owned T*` or `_Borrow T*`, rewrite it: move the qualifier after `*` → `T *_Owned`.
+
+`malloc()` MUST be cast: `(T *_Owned)malloc(n)`. `free()` MUST cast: `free((void *_Owned)p)`.
+
+---
+
+HEADER_EOF
+
+    # === BODY: All skills ===
     for skill_dir in "$SKILLS_DIR"/*/; do
         name="$(basename "$skill_dir")"
         src="$skill_dir/SKILL.md"
@@ -131,6 +152,18 @@ concat_all_skills() {
         echo "---"
         echo ""
     done
+
+    # === FOOTER: Repeat critical rule (recency effect) ===
+    cat << 'FOOTER_EOF'
+
+## Reminder: Pointer Qualifier Placement
+
+Before returning BSC code, verify: `_Owned` and `_Borrow` go AFTER `*`.
+- `char *_Owned` — CORRECT
+- `_Owned char*` — WRONG (compilation error)
+
+Pattern: `T *_Owned`, `T *_Borrow`. Never `_Owned T*`, never `_Borrow T*`.
+FOOTER_EOF
 }
 
 # --- Helper: extract description from SKILL.md ---
@@ -167,16 +200,48 @@ install_claude() {
     if [ ! -f "$claude_md" ] || ! grep -q "BiSheng C" "$claude_md" 2>/dev/null; then
         cat >> "$claude_md" << 'CLAUDE_EOF'
 
-# BiSheng C (BSC) — Pointer Qualifier Rules
+# BiSheng C (BSC) — MUST READ before writing any .cbs code
 
-`_Owned` and `_Borrow` go AFTER the `*`, never before the type:
-- ✅ `char *_Owned p = (char *_Owned)malloc(n);`
-- ✅ `const int *_Borrow r = &_Const x;`
-- ❌ `_Owned char* p` — WRONG
-- ❌ `_Borrow int* r` — WRONG
+## Pointer Qualifier Grammar (CRITICAL)
 
-`malloc()` must be cast: `(T *_Owned)malloc(n)`. `free()` must cast: `free((void *_Owned)p)`.
-BSC files: `.cbs` (source), `.hbs` (header). Compile: `clang file.cbs -o output`.
+`_Owned` and `_Borrow` are **pointer qualifiers**, like `const`. They go AFTER `*`, NEVER before the type.
+
+Grammar: `base_type *qualifier variable_name`
+
+Think of it like `const`: you write `int *const p`, not `const int* p` for a const pointer.
+Same rule: `int *_Owned p`, not `_Owned int* p`.
+
+### Correct Examples
+
+```c
+char *_Owned msg = (char *_Owned)malloc(14);      // owned pointer to char
+int *_Owned p = (int *_Owned)malloc(sizeof(int));  // owned pointer to int
+const int *_Borrow r = &_Const x;                  // immutable borrow
+int *_Borrow mr = &_Mut y;                         // mutable borrow
+void *_Owned vp = (void *_Owned)malloc(n);         // owned void pointer
+free((void *_Owned)p);                             // free requires cast
+```
+
+### Wrong — causes compilation error: "unknown type name '_Owned'"
+
+```c
+_Owned char* msg = malloc(14);     // WRONG — _Owned is not a type
+_Borrow int* r = &_Const x;       // WRONG — _Borrow is not a type
+_Owned int *p = malloc(4);        // WRONG — qualifier before type
+```
+
+## Self-Check (do this before returning BSC code)
+
+Scan every pointer declaration in your output. If you wrote `_Owned T*` or `_Borrow T*`,
+STOP and rewrite: move the qualifier to after `*`. The pattern is ALWAYS `T *_Owned`.
+
+## Quick Reference
+
+- Files: `.cbs` (source), `.hbs` (header)
+- Compile: `clang file.cbs -o output`
+- `malloc()` MUST be cast: `(T *_Owned)malloc(n)`
+- `free()` MUST cast: `free((void *_Owned)p)`
+- `safe_malloc<T>(val)` — safe alternative that returns `T *_Owned`
 CLAUDE_EOF
     fi
 
