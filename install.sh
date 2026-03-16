@@ -137,6 +137,10 @@ If you ever write `_Owned T*` or `_Borrow T*`, rewrite it: move the qualifier af
 
 `malloc()` MUST be cast: `(T *_Owned)malloc(n)`. `free()` MUST cast: `free((void *_Owned)p)`.
 
+## C-to-BSC Translation
+
+If translating/porting C code to BSC, you MUST read the "C to BiSheng C Translation Skill" section below BEFORE starting. Changing file extensions alone is NOT a translation — every pointer must be annotated with `_Owned` or `_Borrow`.
+
 ---
 
 HEADER_EOF
@@ -239,9 +243,15 @@ STOP and rewrite: move the qualifier to after `*`. The pattern is ALWAYS `T *_Ow
 
 - Files: `.cbs` (source), `.hbs` (header)
 - Compile: `clang file.cbs -o output`
-- `malloc()` MUST be cast: `(T *_Owned)malloc(n)`
-- `free()` MUST cast: `free((void *_Owned)p)`
-- `safe_malloc<T>(val)` — safe alternative that returns `T *_Owned`
+- `#include "bishengc_safety.hbs"` for safe allocation APIs
+- **Prefer `safe_malloc<T>(val)`** — returns `T *_Owned` directly, no cast needed
+- **Prefer `safe_free((void *_Owned)p)`** — frees an owned pointer
+- Raw `malloc`/`free` require `_Unsafe` context and `(T *_Owned)` cast
+
+## C-to-BSC Translation
+
+If you are translating/porting C code to BSC, you MUST load the `/c-to-bsc` skill BEFORE starting.
+Changing file extensions alone is NOT a translation — every pointer must be analyzed and annotated with `_Owned`, `_Borrow`, or left raw where appropriate. Every `malloc` should become `safe_malloc` where possible.
 CLAUDE_EOF
     fi
 
