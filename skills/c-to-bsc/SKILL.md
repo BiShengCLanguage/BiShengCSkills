@@ -9,6 +9,8 @@ description: "BiSheng C translation from C. When you need to translate/convert/p
 
 If you are translating C code to BSC, you MUST follow this process. Changing file extensions and stripping platform code is NOT a translation — you must analyze every pointer and add BSC ownership annotations where applicable.
 
+**MINIMUM BAR**: A valid BSC translation of any non-trivial C project MUST contain `_Owned` annotations. Any C code that calls `malloc`/`free` has ownership semantics that MUST be expressed in BSC. If your translation has zero `_Owned` annotations, it is incomplete — go back to Step 3 and re-analyze. "The code is too complex for ownership" is NOT a valid reason to skip annotations; use `_Unsafe` blocks for the complex parts and annotate what you can.
+
 ## CRITICAL RULE: `_Owned` Is Non-Nullable By Default
 
 `_Owned` pointers CANNOT be `NULL` unless you add `_Nullable`:
@@ -62,7 +64,9 @@ A pointer BORROWS data if:
 
 #### Category C: Raw pointers → leave as plain `T *` (NO annotation)
 
-Some pointers CANNOT or SHOULD NOT be annotated. Leave these as raw `T *`:
+Some **specific** pointers CANNOT or SHOULD NOT be annotated. Leave these as raw `T *`.
+
+**WARNING**: Category C is for individual pointers with specific reasons, NOT for entire codebases. If you find yourself putting most pointers in Category C, you are doing it wrong — go back and re-analyze. Most pointers that touch `malloc`/`free` belong in Category A.
 
 - **Pointer arithmetic / interior pointers**: pointers into the middle of a buffer
   ```c
@@ -278,10 +282,28 @@ const char *literal = "hello";                              // raw pointer — s
 char *_Owned allocated = (char *_Owned)strdup("hello");     // heap copy — must free
 ```
 
-#### Function pointers
-If the C code uses function pointer hooks (e.g. custom allocators), either:
-- Remove them and use `malloc`/`free` directly, OR
-- Keep them but note that BSC may require `_Unsafe` context for function pointer calls
+#### Function pointer hooks (custom allocators)
+If the C code uses function pointer hooks for memory allocation (e.g. a configurable `allocate`/`deallocate` struct), you MUST replace them with direct `malloc`/`free`/`realloc` calls. This is required because:
+- BSC ownership annotations need to know the actual allocator — function pointer indirection hides this
+- Keeping hooks and leaving all pointers raw defeats the purpose of translating to BSC
+- The goal is to express ownership at the type level, not preserve runtime allocator configurability
+
+```c
+// BEFORE (C) — custom allocator hooks
+typedef struct {
+    void *(*allocate)(size_t);
+    void (*deallocate)(void *);
+} hooks;
+static hooks global_hooks = { malloc, free };
+// ... global_hooks.allocate(size) everywhere ...
+
+// AFTER (BSC) — remove hooks, use direct calls with _Owned
+// Delete the hooks struct entirely
+// Replace global_hooks.allocate(size) → malloc(size) in _Unsafe, cast to _Owned
+// Replace global_hooks.deallocate(p) → safe_free((void *_Owned)p)
+```
+
+Do NOT use "the code has a hook-based allocator" as justification for skipping ownership annotations. Remove the hooks and annotate.
 
 ### Step 6: Handle goto + Ownership Cleanup
 
@@ -411,4 +433,6 @@ cJSON_AddStringToObject(ref, "name", "val");  // OK: using raw ref
 - [ ] **No use-after-move**: After passing `_Owned` to a consuming function, only use raw aliases
 - [ ] **`goto` cleanup paths**: `_Owned _Nullable` used for variables freed in error handlers
 - [ ] **Qualifier placement**: `T *_Owned`, never `_Owned T*`
+- [ ] **Non-zero annotations**: Translation contains `_Owned` on allocating functions, freeing functions, and owned struct fields. Zero `_Owned` = incomplete translation.
+- [ ] **No hook/allocator indirection**: Custom allocator structs removed, replaced with direct malloc/free
 - [ ] Code compiles with `clang`
