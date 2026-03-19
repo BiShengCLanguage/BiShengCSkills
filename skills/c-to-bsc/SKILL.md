@@ -262,6 +262,105 @@ unsigned char *output_pointer = output;              // alias into owned buffer
 char *after_end = nullptr;                           // used by strtod
 ```
 
+### Step 4.5: Convert Address-of (`&`) to `&_Const` / `&_Mut`
+
+In BiSheng C, `_Safe` zones **forbid plain `&`** — you must use `&_Const` (immutable borrow) or `&_Mut` (mutable borrow). See `bsc-borrowing` Skill §7 (Complete Example) and `bsc-safe-zone` Skill for full semantics.
+
+#### When to convert
+
+| Context | C `&` | BSC conversion |
+|---------|-------|----------------|
+| **`_Safe` zone** | `&x` | Must convert to `&_Const x` or `&_Mut x` |
+| **`_Unsafe` zone** | `&x` | Can keep as `&x` (no conversion required) |
+| **Function address** | `&func` | Keep as `&func` — exception: function addresses allowed in `_Safe` |
+
+#### How to choose `&_Const` vs `&_Mut`
+
+| Situation | Use | Reason |
+|-----------|-----|--------|
+| Target is `const T *_Borrow` or code **only reads** through the pointer | `&_Const x` | Immutable borrow — read-only, multiple allowed |
+| Target is `T *_Borrow` and code **writes** through the pointer | `&_Mut x` | Mutable borrow — read/write, exactly one at a time |
+| Passed to `void foo(const T *_Borrow p)` | `&_Const x` | Function expects read-only borrow |
+| Passed to `void bar(T *_Borrow p)` | `&_Mut x` | Function may mutate through pointer |
+| `const` variable / string literal | `&_Const` only | Cannot use `&_Mut` — not modifiable |
+| Global variable (in `_Safe`) | `&_Const` only | `&_Mut` of globals forbidden in `_Safe` |
+| Function pointer | `&_Const` only | `&_Mut` for function pointer not allowed |
+
+#### Examples
+
+```c
+// BEFORE (C)
+void init(int *out) { *out = 0; }
+void read_val(const int *p) { (void)*p; }
+void example(void) {
+    int x = 42;
+    int *p = &x;
+    init(&x);
+    read_val(&x);
+}
+
+// AFTER (BSC) — in _Safe zone
+_Safe void init(int *_Borrow out) { *out = 0; }
+_Safe void read_val(const int *_Borrow p) { (void)*p; }
+_Safe void example(void) {
+    int x = 42;
+    const int *_Borrow r = &_Const x;   // read-only → &_Const
+    init(&_Mut x);                       // writes → &_Mut
+    read_val(&_Const x);                 // read-only param → &_Const
+}
+```
+
+#### Borrow from `_Owned` pointer
+
+```c
+// BEFORE (C) — pointer to heap object
+Node *node = malloc(...);
+process(&node->value);
+
+// AFTER (BSC)
+Node *_Owned node = (Node *_Owned)malloc(...);
+process(&_Mut node->value);    // or &_Const if process only reads
+```
+
+From owned pointer itself (not a field): use `&_Const *ptr` or `&_Mut *ptr`:
+
+```c
+Node *_Owned node = create_node();
+const Node *_Borrow ref = &_Const *node;   // borrow from owned
+```
+
+#### When NOT to convert (keep plain `&`)
+
+- **Outside `_Safe`**: In `_Unsafe` blocks or non-`_Safe` functions, plain `&` is valid.
+- **Function address**: `&printf`, `&my_callback` — allowed in `_Safe`.
+- **Output/double-pointer patterns**: `int **out` receiving `&local_ptr` — often kept in `_Unsafe`; if in `_Safe`, the inner `&` would need `&_Mut`/`&_Const` per target type.
+
+#### Common mistakes
+
+```c
+// WRONG — & forbidden in _Safe
+_Safe void f(void) { int x = 1; int *p = &x; }
+
+// CORRECT
+_Safe void f(void) { int x = 1; int *_Borrow p = &_Mut x; }
+
+// WRONG — &_Mut on const / literal
+const int c = 1;
+int *_Borrow mp = &_Mut c;           // error: not modifiable
+char *_Borrow sp = &_Mut "hello";    // error: string literal immutable
+
+// CORRECT
+const int *_Borrow r = &_Const c;
+const char *_Borrow sr = &_Const "hello";
+
+// WRONG — &_Mut of global in _Safe
+int global_x;
+_Safe void f(void) { int *_Borrow p = &_Mut global_x; }  // error
+
+// CORRECT
+_Safe void f(void) { const int *_Borrow p = &_Const global_x; }
+```
+
 ### Step 5: Handle Special Patterns
 
 #### Conditional ownership (flag-based)
@@ -423,6 +522,7 @@ cJSON_AddStringToObject(ref, "name", "val");  // OK: using raw ref
 - [ ] **Owned struct fields** annotated `*_Owned`
 - [ ] **Borrowed struct fields** annotated `*_Borrow`
 - [ ] **Interior/arithmetic/iterator pointers** left as raw `T *`
+- [ ] **Address-of in _Safe**: `&x` converted to `&_Const x` (read-only) or `&_Mut x` (mutable); `&_Mut` not used on const, literals, or globals
 - [ ] **Single-value allocations** converted to `safe_malloc<T>(val)` where possible
 - [ ] **Variable-size allocations** (malloc/calloc/strdup/realloc) cast to `T *_Owned` in `_Unsafe`
 - [ ] **Every free()** converted to `safe_free((void *_Owned)p)` or `safe_free((void *_Nullable _Owned)p)`
