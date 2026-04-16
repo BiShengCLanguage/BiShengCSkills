@@ -535,4 +535,6 @@ cJSON_AddStringToObject(ref, "name", "val");  // OK: using raw ref
 - [ ] **Qualifier placement**: `T *_Owned`, never `_Owned T*`
 - [ ] **Non-zero annotations**: Translation contains `_Owned` on allocating functions, freeing functions, and owned struct fields. Zero `_Owned` = incomplete translation.
 - [ ] **No hook/allocator indirection**: Custom allocator structs removed, replaced with direct malloc/free
+- [ ] **Nullability**: Pointers that can be null use `_Nullable`; `nullptr` used instead of `NULL` in BSC
+- [ ] **Initialization**: Variables initialized before use in `_Safe` zones; arrays use init lists (not element-by-element)
 - [ ] Code compiles with `clang`

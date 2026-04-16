@@ -112,7 +112,7 @@ _Safe void refcell_example(void) {
 | `sub` | `s.sub(start, end)` → `Slice<T>` | Sub-slice [start, end) |
 | `length` | `s.length()` → `size_t` | Number of elements |
 | `is_empty` | `s.is_empty()` → `_Bool` | Whether slice is empty |
-| `as_ptr` | `s.as_ptr()` → `const T*` | **_Unsafe** — raw pointer |
+| `as_ptr` | `s.as_ptr()` → `const T *_Nonnull` | **_Unsafe** — raw nonnull pointer |
 
 ### SliceMut\<T\> (mutable view)
 
@@ -123,6 +123,7 @@ _Safe void refcell_example(void) {
 | `get_mut` | `s.get_mut(size_t)` → `T *_Borrow` | Get mutable element |
 | `sub` | `s.sub(start, end)` → `Slice<T>` | Immutable sub-slice |
 | `sub_mut` | `s.sub_mut(start, end)` → `SliceMut<T>` | Mutable sub-slice |
+| `as_mut_ptr` | `s.as_mut_ptr()` → `T *_Nonnull` | **_Unsafe** — raw mutable nonnull pointer |
 | `length` | `s.length()` → `size_t` | Number of elements |
 | `is_empty` | `s.is_empty()` → `_Bool` | Whether slice is empty |
 

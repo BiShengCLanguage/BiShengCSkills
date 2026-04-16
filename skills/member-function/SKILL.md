@@ -7,7 +7,7 @@ description: "BiSheng C member functions. When you need to understand how to att
 
 ## 1. Overview
 
-Attach methods to any type (struct, union, enum, int, float, etc.) without changing its memory layout. Three forms: instance methods, value receivers, and static methods.
+Attach methods to any type (struct, union, enum, int, float, etc.) without changing its memory layout (size and alignment are unaffected). Three forms: instance methods, value receivers, and static methods. This enables non-intrusive extension — add methods to existing types without modifying their source.
 
 ## 2. Syntax
 
@@ -23,17 +23,40 @@ RetType TypeName::staticMethod(Params...) { body }
 
 // `This` is a shorthand for the enclosing type name
 RetType TypeName::method(This* this) { body }
+RetType TypeName::method(This this) { body }   // value receiver with This
+```
+
+### Declaration vs Definition separation
+
+```c
+void int::print(int* this);       // declaration
+
+void int::print(int* this) {      // definition
+    printf("%d", *this);
+}
 ```
 
 ## 3. Rules
 
 - `this` must be the first parameter if present
 - No method overloading or redefinition
-- Cannot add methods to: `void`, pointer types, array types, function types, cv-qualified types (e.g. `const int`)
-- Can add methods to primitives: `int`, `float`, `char`, etc.
+- Method names must not collide with member variable names (applies to struct, union, enum)
 - Must use `struct` keyword unless typedef-ed: `void struct S::f(struct S* this) {}`
 - typedef-ed names work: `typedef struct { int x; } Vec2; void Vec2::f(This* this) {}`
-- Method names must not collide with member variable names
+- `this` pointer can be `const`/`volatile` qualified: `void int::read(const int* this) {}`
+
+### Type restrictions — cannot add methods to:
+- `void`
+- Pointer types
+- Array types
+- Function types
+- cv-qualified types (e.g. `const int`, `volatile float`)
+- **Incomplete types** (declared but not fully defined)
+
+### Other restrictions
+- If two header files define the same-named member function for the same type, including both in one compilation unit causes a compile error
+- Calling member functions directly on **literals** is currently prohibited: `42.print()` is an error (integer, float, and compound literals)
+- Static methods must be called as `TypeName::method()` — calling via dot notation on an instance is an error
 
 ## 4. Call Syntax
 
@@ -104,4 +127,5 @@ int main() {
 
 > For generic member functions, see `bsc-generic` Skill
 > For trait methods using This*, see `bsc-trait` Skill
+> For operator overloading on types, see `bsc-operator-overloading` Skill
 > For member function errors (BSC-E11xx), see `bsc-errors` Skill

@@ -1,6 +1,6 @@
 ---
 name: bsc-generic
-description: "BiSheng C generics. When you need to understand generic functions, generic structs, generic unions, constant generics, generic type aliases, generic member functions, or type deduction, use this Skill."
+description: "BiSheng C generics. When you need to understand generic functions, generic structs, generic unions, constant generics, generic type aliases, conditional type aliases, generic member functions, or type deduction, use this Skill."
 ---
 
 # BiSheng C Generics Skill
@@ -88,9 +88,16 @@ int main() {
 }
 ```
 
-- Constant generic params: integer types only (int, short, long, unsigned, etc.)
-- Constant generic args: integer literals, constexpr variables, constexpr function calls
-- **Parenthesization rule**: plain integer literals and constexpr constants need no parens; all other constant expressions must be parenthesized — e.g. `Array<int, 5>` and `Array<int, sz>` are fine, but `Array<int, (sz + 1)>` requires parens
+### Constant generic parameter types
+- Declaration: `int` and its modifiers (`long`, `short`, `unsigned`, `signed`) and their combinations
+- Also supports typedef aliases of the above: `typedef unsigned long ulong;` then `struct S<ulong N> {...}`
+
+### Constant generic argument types
+- Integer literals (`1`, `2`, etc.) — no parens needed
+- `constexpr` variables — no parens needed
+- `constexpr` function calls and other constant expressions — **must be parenthesized**
+
+**Parenthesization rule**: plain integer literals and constexpr constants need no parens; all other constant expressions must be parenthesized — e.g. `Array<int, 5>` and `Array<int, sz>` are fine, but `Array<int, (sz + 1)>` requires parens.
 
 ## 5. Generic Type Aliases
 
@@ -104,10 +111,36 @@ typedef MyPair<T> = struct Pair<T, T>;
 typedef Int64 = long int;
 ```
 
+**Restrictions:**
 - Cannot define generic type aliases inside function bodies
+- Cannot define type aliases inside struct bodies
 - Cannot extend member functions on a generic type alias
 
-## 6. Generic Member Functions
+## 6. Conditional Type Alias
+
+Requires `#include <bsc_conditional.hbs>`.
+
+```c
+#include <bsc_conditional.hbs>
+
+// conditional<C, T, F>: when C is non-zero → type T; when C is zero → type F
+typedef conditional<int C, T, F> = __conditional(int C, T, F);
+
+conditional<1, int, float> x = 42;     // x is int
+conditional<0, int, float> y = 3.14;   // y is float
+```
+
+Use case — selecting types based on generic parameters:
+
+```c
+typedef RetType<int C> = conditional<C, int*, float*>;
+
+RetType<1> foo<int C>() {
+    // When C is non-zero, RetType<C> is int*; otherwise float*
+}
+```
+
+## 7. Generic Member Functions
 
 ```c
 struct MyStruct<T> { T val; };
@@ -117,12 +150,20 @@ T struct MyStruct<T>::get(This* this) { return this->val; }
 
 T union MyUnion<T>::get(This* this) { return this->val; }
 
+// Static generic member function
 T static struct MyStruct<T>::zero() { T z = 0; return z; }
+
+// Return type can be the generic struct/union type itself
+struct MyStruct<T> struct MyStruct<T>::make(T x) {
+    struct MyStruct<T> result = { .val = x };
+    return result;
+}
 
 int main() {
     struct MyStruct<int> s = {.val = 42};
     int v = s.get();
     int z = MyStruct<int>::zero();
+    struct MyStruct<int> s2 = MyStruct<int>::make(7);
 
     union MyUnion<int> u = {.val = 7};
     int w = u.get();
@@ -131,8 +172,10 @@ int main() {
 ```
 
 - No overloading of generic member functions (same rule as non-generic member functions)
+- Generic member functions can be static (first parameter not necessarily `this`)
+- Return type can be the generic struct/union type
 
-## 7. Rules
+## 8. Rules
 
 - **No spaces** between the function/struct/union name and the angle brackets: `max<int>(a, b)` is correct; `max <int>(a, b)` is not
 - Generic functions support both explicit (`max<int>(a, b)`) and implicit (`max(a, b)`) type deduction
@@ -142,7 +185,7 @@ int main() {
 - No overloading of generic member functions
 - Constant generic expressions (other than plain literals / constexpr constants) must be parenthesized
 
-## 8. Complete Example
+## 9. Complete Example
 
 ```c
 #include <stdio.h>
@@ -165,4 +208,5 @@ int main() {
 > For member function basics, see `bsc-member-function` Skill
 > For generic traits, see `bsc-trait` Skill
 > For constexpr generic functions, see `bsc-constexpr` Skill
+> For conditional type alias, see `bsc-constexpr` Skill
 > For generics/constexpr errors (BSC-E09xx), see `bsc-errors` Skill

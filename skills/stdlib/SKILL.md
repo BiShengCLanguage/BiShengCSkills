@@ -98,6 +98,8 @@ _Safe void vec_example(void) {
 | `from` | `String::from(const char*)` → `String` | **_Unsafe** — create from C string |
 | `as_str` | `s.as_str()` → `const char *_Borrow` | Immutable C string view |
 | `as_mut_str` | `s.as_mut_str()` → `char *_Borrow` | Mutable C string view |
+| `get` | `s.get(size_t)` → `const char *_Borrow` | Immutable char access (bounds-checked) |
+| `get_mut` | `s.get_mut(size_t)` → `char *_Borrow` | Mutable char access (bounds-checked) |
 | `at` | `s.at(size_t)` → `char` | Character at index |
 | `push` | `s.push(char)` | Append character |
 | `set` | `s.set(size_t, char)` | Set character at index |
@@ -105,6 +107,8 @@ _Safe void vec_example(void) {
 | `slice` | `s.slice(size_t start, size_t len)` → `String` | Extract substring |
 | `equals` | `s.equals(&other)` → `_Bool` | Compare two strings |
 | `length` | `s.length()` → `size_t` | String length |
+| `capacity` | `s.capacity()` → `size_t` | Allocated capacity |
+| `shrink_to_fit` | `s.shrink_to_fit()` | Reduce capacity to length |
 | `is_empty` | `s.is_empty()` → `_Bool` | Whether string is empty |
 
 **Note**: `String::from()` is `_Unsafe` — wrap in `_Unsafe {}` block when used in `_Safe` code.

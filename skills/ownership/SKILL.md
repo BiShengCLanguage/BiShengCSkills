@@ -1,6 +1,6 @@
 ---
 name: bsc-ownership
-description: "BiSheng C ownership system. When you need to understand _Owned pointers, move semantics, _Owned structs, destructors, RAII, _Public/_Private access, _Nullable, safe_malloc/safe_free, or ownership transfer rules, use this Skill."
+description: "BiSheng C ownership system. When you need to understand _Owned pointers, move semantics, _Owned structs, destructors, RAII, _Public/_Private access, _Nullable, safe_malloc/safe_free, ownership transfer rules, or _Owned with traits/unions/function pointers, use this Skill."
 ---
 
 # BiSheng C Ownership Skill
@@ -71,6 +71,8 @@ _Safe int main(void) {
 
 ## 4. Multi-level Pointer Release (Inner to Outer)
 
+For multi-level pointers, release from inner to outer. For structs with `_Owned` pointer members, free all `_Owned` members first, then the struct pointer.
+
 ```c
 #include "bishengc_safety.hbs"
 struct S { int *_Owned p; int *_Owned q; };
@@ -94,20 +96,53 @@ _Safe void foo(void) {
 ## 5. Rules
 
 - **`_Owned` goes after the `*`**: write `int *_Owned`, NOT `_Owned int*`
+- `_Owned` can only modify **pointer types**, not non-pointer types
 - `_Owned` types have **move semantics**: assignment, passing, returning **transfers** ownership
 - After transfer, the original variable is **dead** — any use is a compile error
 - Before scope ends, `_Owned` variables **must** have ownership released
-- Release by: (a) passing to function taking `_Owned`, (b) `safe_free((void *_Owned)p)`, (c) returning
+- Release by: (a) passing to function taking `_Owned`, (b) `safe_free((void *_Owned)p)`, (c) returning, (d) assigning to another `_Owned` variable
 - No pointer arithmetic on `_Owned` pointers (no `+`, `-`, `[]`, `++`, `--`)
 - Comparison operators (`==`, `!=`, `<`, etc.) are allowed
-- `_Owned` **CANNOT** be: global variables, union members, **array elements** (including structs with `_Owned` members)
-- Type matching is strict: `int *_Owned` != `int *` — no implicit conversion between them
+- No implicit conversion between `_Owned` and raw pointers in **either** direction — strict type matching
 - Explicit cast between `_Owned` and raw pointers requires `_Unsafe` context
 - Exception: `T *_Owned` -> `void *_Owned` is allowed in safe context
-- `_Nullable`: `int *_Owned _Nullable p = nullptr;` allows null owned pointers
+
+### Prohibited uses of `_Owned`
+- **Global variables** (including function-local `static`)
+- **Union members**: `_Owned` cannot modify union type members
+  ```c
+  union U { int *_Owned p; };  // ERROR
+  ```
+- **Array elements**: cannot store `_Owned` pointers in arrays, including structs with `_Owned` members as array elements
+
+### Nullable `_Owned` pointers
+- `int *_Owned _Nullable p = nullptr;` allows null owned pointers
+- `__take_from_raw` and `__move_to_raw` preserve Nullability
+
+### Logical and conditional operators
 - Logical operators (`!`, `&&`, `||`) work on `_Owned` pointers (null checks, no ownership consumed)
-- `_Owned` pointers can be conditions in `if`/`while`/`do-while`/`for`/ternary, but NOT `switch`
+- `_Owned` pointers can be conditions in `if`/`while`/`do-while`/`for`/ternary, but **NOT** `switch`
 - Implicit `_Owned` -> `_Bool` conversion is allowed (does not consume ownership)
+
+### `_Owned` with `_Trait` types
+- Implicit conversion: `S *_Owned` to `_Trait T *_Owned` if `S` implements `T`
+- Can call trait methods through `_Trait T *_Owned` pointers
+
+### Function pointer matching
+- Function pointer types must match `_Owned` annotations exactly — cannot assign an `_Owned`-parameter function to a non-`_Owned`-parameter pointer or vice versa
+
+### Explicit ownership transfer interfaces
+- `__move_to_raw(p)` — moves ownership out, returns raw pointer
+- `__take_from_raw(p)` — takes ownership from raw pointer, returns `_Owned` pointer
+- Both preserve Nullability
+
+### Conversion order matters
+When converting between `T *_Owned` and `void *`:
+- **Order 1**: `T *_Owned` → `void *_Owned` → `void *` (internal `_Owned` pointers must NOT have ownership)
+- **Order 2**: `T *_Owned` → `T *` → `void *` (internal `_Owned` pointers KEEP ownership)
+
+### `_Owned` with generics
+In generic functions, when `_Owned` modifies generic type parameter T (as `T _Owned` or `_Owned T`), `_Owned` applies to the complete type T. When T instantiates as `int*`, the result is `int* _Owned`.
 
 ## 6. _Safe / _Unsafe Context
 
@@ -159,4 +194,4 @@ _Safe int main(void) {
 - **Partial move is prohibited**: at scope end, an `_Owned struct` must be either fully owned (nothing moved out) or entirely moved as a whole. Moving individual `_Owned` members while keeping the struct causes a compile error
 - Global `_Owned struct` variables do not have their destructors called (including function-local `static`)
 
-> See also: `bsc-borrowing`, `bsc-safe-zone`, `bsc-errors` Skills
+> See also: `bsc-borrowing`, `bsc-safe-zone`, `bsc-nullability`, `bsc-errors` Skills

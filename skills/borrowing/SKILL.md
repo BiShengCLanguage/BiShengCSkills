@@ -1,6 +1,6 @@
 ---
 name: bsc-borrowing
-description: "BiSheng C borrowing. When you need to understand _Borrow pointers, &_Const (immutable borrow), &_Mut (mutable borrow), borrow lifetime rules, freezing semantics, NLL (Non-Lexical Lifetimes), or borrow function signatures, use this Skill."
+description: "BiSheng C borrowing. When you need to understand _Borrow pointers, &_Const (immutable borrow), &_Mut (mutable borrow), borrow lifetime rules, freezing semantics, NLL (Non-Lexical Lifetimes), borrow type conversions, dereference/member access semantics, or borrow function signatures, use this Skill."
 ---
 
 # BiSheng C Borrowing Skill
@@ -43,7 +43,7 @@ Mutable borrows implicitly convert to immutable: `T *_Borrow` -> `const T *_Borr
 
 ## 4. Non-Lexical Lifetimes (NLL)
 
-Borrow lifetimes use **NLL**: a borrow is active from its creation point to its **last use**, NOT to the end of the lexical scope. This allows code like:
+Borrow lifetimes use **NLL**: a borrow is active from its creation (or re-assignment) to its **last use**, NOT to the end of the lexical scope. NLL can be segmented — if a borrow variable is reassigned, it creates disjoint active ranges.
 
 ```c
 void use(int *_Borrow p) {}
@@ -65,7 +65,7 @@ Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, mem
 - **`_Borrow` goes after the `*`**: write `int *_Borrow`, NOT `_Borrow int*`
 - While **immutable borrow** active: original is read-only, no mutable borrows allowed
 - While **mutable borrow** active: original is **frozen** — no reads, writes, moves, or borrows
-- **Struct field borrows**: `&_Const e.field` or `&_Mut e.field` freezes only **that field** (and blocks whole-struct modification), but other fields remain accessible
+- **Struct field borrows**: `&_Mut e.field` freezes only **that field** (blocks whole-struct modification); other fields remain accessible. `&_Const e.field` puts the field into read-only state
 - Borrow lifetime <= borrowed value's lifetime (compiler enforced)
 - Cannot create borrow of a borrow: `int *_Borrow *_Borrow` is illegal
 - Borrow variables must be initialized at declaration
@@ -74,10 +74,45 @@ Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, mem
 - No indexing (`p[i]`) and no pointer arithmetic (`p + n`, `p++`) on borrow pointers
 - Cannot use `_Borrow` pointer type as a generic type argument
 - No `_Trait` impl for borrow types; no member functions for borrow types
-- Converting between `_Borrow` and raw pointer: allowed outside `_Safe` zones (explicit cast required); **forbidden inside `_Safe` zones**
+- Cannot take borrow of a struct that itself contains borrow members
+- Globals: in safe zones, only immutable borrows (`&_Const`) allowed; no mutable borrows of globals
+- String literals: `&_Mut "hello"` is forbidden; `&_Mut * "hello"` is forbidden
+
+### Reassignment rules
+- Reassignment of a borrow variable requires the same type and the new source must have a lifetime >= the borrow variable's remaining lifetime
+
+## 6. Dereference and Member Access
+
+### Dereference (`*p`)
+| Operation | Immutable borrow | Mutable borrow (T is Copy) | Mutable borrow (T is Move) |
+|-----------|-----------------|---------------------------|---------------------------|
+| Read `*p` | OK | OK | OK |
+| Assign to `*p` | Error | OK | Error (cannot move-assign) |
+
+### Member access (`p->field`)
+- Immutable borrow: can read fields, cannot modify
+- Mutable borrow: can read and modify fields (for Copy types)
+- Immutable borrow cannot call mutable methods (`T *_Borrow this` methods)
+
+## 7. Type Conversions
+
+- **Trait upcasting**: explicit cast required; no implicit downcasting from trait to concrete
+- **To `void*`**: implicit upcasting allowed
+- **From `void*` to `_Borrow`**: implicit downcasting **forbidden**; explicit downcasting allowed
+- **Between `_Borrow` and raw pointer**: allowed outside `_Safe` zones with explicit cast; **forbidden inside `_Safe` zones**
+- **Between `_Owned` and `_Borrow`**: C-style casts in either direction are **forbidden**
+- **Between mutable and immutable borrows**: casting in either direction is forbidden (mutable-to-immutable goes through implicit conversion only, not explicit cast)
+- **Implicit `_Bool` conversion**: `_Borrow _Nullable` pointers can be used in conditions
+
+## 8. Additional Rules
+
+- Borrow function pointers: can call functions through `_Borrow` function pointers
+- Cannot take mutable borrow of functions — only immutable: `&_Const func`
+- Borrow pointers can be used in `if`/`while`/`do-while`/`for`/ternary conditions, but **NOT** in `switch`
+- Forbidden operators on borrow pointers: `-`, `~`, `[]`, `++`, `--`, `*`(arithmetic), `/`, `%`, `&`(bitwise), `|`, `<<`, `>>`, binary `+`, binary `-`
 - String literals auto-borrow to `const char *_Borrow` when passed to a `const char *_Borrow` parameter (compiler inserts `&_Const *`)
 
-## 6. Function Signatures
+## 9. Function Signatures
 
 ```c
 // Read-only access
@@ -94,9 +129,9 @@ _Safe int *_Borrow first(Vec<int> *_Borrow this) { ... }
 
 - If return is `_Borrow` and one param is `_Borrow`: return lifetime = param lifetime
 - If multiple `_Borrow` params: return lifetime = union of all param lifetimes
-- If no `_Borrow` params but return is `_Borrow`: compile error
+- If no `_Borrow` params but return is `_Borrow`: **compile error** — borrow return requires at least one borrow parameter
 
-## 7. Complete Example
+## 10. Complete Example
 
 ```c
 #include <stdio.h>
@@ -155,4 +190,5 @@ int main() {
 
 > For ownership (owning pointers), see `bsc-ownership` Skill
 > For safe zones that require borrows, see `bsc-safe-zone` Skill
+> For nullability with borrows, see `bsc-nullability` Skill
 > For borrow errors (BSC-E02xx), see `bsc-errors` Skill

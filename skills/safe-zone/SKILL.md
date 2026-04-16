@@ -1,6 +1,6 @@
 ---
 name: bsc-safe-zone
-description: "BiSheng C safe zones. When you need to understand _Safe functions, _Safe blocks, _Unsafe escape blocks, safe zone restrictions (initialization rules, pointer restrictions, type cast limits, ++/-- semantics), or mixed safe/unsafe patterns, use this Skill."
+description: "BiSheng C safe zones. When you need to understand _Safe functions, _Safe blocks, _Unsafe escape blocks, safe zone restrictions (initialization, pointers, type casts, enum/float conversions, ++/-- semantics), trait/generic safety, member function safety, or mixed safe/unsafe patterns, use this Skill."
 ---
 
 # BiSheng C Safe Zones Skill
@@ -11,7 +11,7 @@ Designate code regions where the compiler enforces memory safety. Default contex
 
 ## 2. Syntax
 
-`_Safe` / `_Unsafe` can modify: function declarations, function definitions, function pointers, statements, and parenthesized expressions.
+`_Safe` / `_Unsafe` can modify: function declarations, function definitions, function signatures, function pointers, statements, and parenthesized expressions.
 
 ```c
 _Safe int add(int a, int b) { return a + b; }  // safe function
@@ -42,7 +42,7 @@ In `_Safe` zones:
 - **`nullptr` required** — `NULL` is forbidden in safe zones; use `nullptr` to initialize or compare pointers
 
 ### Raw pointer params/returns are allowed in signatures
-A `_Safe` function **may** have raw pointer params/returns (`_Safe int *foo(int a)` is valid). The restrictions apply to *operations on* pointers inside the safe zone, not their presence in signatures.
+A `_Safe` function **may** have raw pointer params/returns, and may have structs with pointer members or union types as params/returns. The restrictions apply to *operations on* pointers inside the safe zone, not their presence in signatures.
 
 ### Initialization rules
 - **Pointer types** (raw, `_Owned`, `_Borrow`, function pointers) **must** be initialized (use `nullptr` if needed)
@@ -71,12 +71,21 @@ _Safe void foo(void) {
 }
 ```
 
+### Type conversion rules
+- **No narrowing implicit casts** (`long` to `int`, `double` to `float`, `int` to `float`) — explicit cast required
+- **Compile-time constants** that fit the target type are exempt from narrowing restrictions
+- **No float-to-integer casts** (even explicit)
+- **Int-to-float** conversions are allowed explicitly in safe zones
+- **Enum conversions**: implicit enum-to-enum is forbidden; explicit is allowed only if target enum contains all values of source. Implicit enum-to-underlying-integer is allowed
+- **Comparison/logical operators** (`==`, `!=`, `>=`, `<=`, `>`, `<`, `&&`, `||`, `!`): results are `int` type (0 or 1) and may implicitly convert to other integer types
+- **if/while conditions**: any arithmetic type allowed (follows C rules)
+
+### Union rules
+- **No union member access** (`.` read or write) — but unions can be declared, initialized, and passed as arguments
+
 ### Other restrictions
 - **No inline assembly**
-- **No union member access** (`.` read or write) — but unions can be declared, initialized, and passed as arguments
 - **No calling unsafe functions** — must wrap in `_Unsafe {}`
-- **No narrowing implicit casts** (`long` to `int`, `double` to `float`, `int` to `float`) — explicit cast required. Compile-time constants that fit the target type are exempt.
-- **No float-to-integer casts** (even explicit)
 - **Empty params require `void`**: `_Safe void f(void)` — not `_Safe void f()`
 - **No variadic params** — unless the function has `__attribute__((format(...)))`:
   ```c
@@ -84,10 +93,15 @@ _Safe void foo(void) {
   __attribute__((format(printf, 1, 2)))
   _Safe int bar(const char *fmt, ...);  // ok (but va_start/va_arg/va_end still forbidden inside the body)
   ```
-- **Globals**: only read-only borrows (`&_Const`) of global variables allowed; no mutable borrows (`&_Mut`) of globals
 - **Switch**: `case`/`default` only in first-level block after `switch`; no variable declarations in that first-level block
 
-## 4. Mixed-Mode Declarations (_Safe/_Unsafe overloading)
+## 4. Trait and Generic Safety Rules
+
+- `_Trait` functions declared `_Safe` require implementation functions to also be `_Safe`; if trait function is not `_Safe`, implementation can be `_Safe` (compiler warns)
+- `_Safe` generic functions: all instantiations are checked for safety
+- Member functions can also be `_Safe`/`_Unsafe` modified with same rules as global functions
+
+## 5. Mixed-Mode Declarations (_Safe/_Unsafe overloading)
 
 The same function can have both `_Safe` and `_Unsafe` declarations:
 
@@ -99,8 +113,10 @@ _Safe int* _Owned foo(int* _Owned p);  // safe version: adds _Owned
 - `_Safe` declaration may **add** `_Owned`/`_Borrow` to raw pointer params/returns
 - Must **not remove** qualifiers present in the `_Unsafe` declaration, nor swap `_Owned` for `_Borrow`
 - In safe context, only `_Safe` overload is callable. In unsafe context, `_Safe` version preferred when types match.
+- **Generic functions do NOT support mixed mode**
+- If a function has multiple declarations of the same safety level, they must be consistent
 
-## 5. Function Pointer Rules
+## 6. Function Pointer Rules
 
 - `_Safe` function pointers can only be assigned from functions that have a `_Safe` declaration
 - `_Unsafe` function pointers can be assigned from either `_Safe` or `_Unsafe` functions (if types are compatible)
@@ -114,7 +130,7 @@ sp = safe_fn;    // ok
 sp = unsafe_fn;  // error: no _Safe declaration available
 ```
 
-## 6. Complete Example
+## 7. Complete Example
 
 ```c
 #include <stdio.h>
@@ -149,7 +165,9 @@ _Safe int main(void) {
 }
 ```
 
+> For initialization analysis (field-level tracking), see `bsc-initialization` Skill
 > For borrowing (required in safe zones), see `bsc-borrowing` Skill
 > For ownership in safe contexts, see `bsc-ownership` Skill
+> For nullability checking, see `bsc-nullability` Skill
 > For safe zone errors (BSC-E03xx), see `bsc-errors` Skill
 > For common safe zone mistakes, see `bsc-common-mistakes` Skill

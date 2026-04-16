@@ -1,6 +1,6 @@
 ---
 name: bsc-trait
-description: "BiSheng C traits. When you need to understand _Trait definition, _Impl registration, trait pointers, dynamic dispatch (vtable), generic traits, or trait-based polymorphism, use this Skill."
+description: "BiSheng C traits. When you need to understand _Trait definition, _Impl registration, trait pointers, dynamic dispatch (vtable), generic traits, trait pointer variables, trait type casting, or trait-based polymorphism, use this Skill."
 ---
 
 # BiSheng C Traits Skill
@@ -18,11 +18,12 @@ _Trait Printable {
 };
 ```
 
-- Only function declarations inside `_Trait` body (no implementations)
+- Only function declarations inside `_Trait` body (no implementations, no variables)
 - First param must be `This* this` — named exactly `this`
-- `_Trait` definitions only at top-level scope
+- `_Trait` definitions only at top-level scope (not inside functions or structs)
 - Empty traits are allowed: `_Trait T {};`
 - Cannot extend member functions on a trait type: `void _Trait T::method(_Trait T* this)` is an error
+- Can typedef: `typedef _Trait Printable { void print(This* this); } P;`
 
 ## 3. Implementing Traits
 
@@ -46,7 +47,7 @@ _Impl _Trait Printable for struct Circle;  // all methods must exist before this
 - Cannot implement trait for an instantiated generic struct type:
   ```c
   struct G<T> {};
-  _Impl _Trait Printable for struct G<int>;  // ERROR: cannot _Impl _Trait for an instantiated type
+  _Impl _Trait Printable for struct G<int>;  // ERROR
   ```
 
 ## 4. Trait Pointers (Dynamic Dispatch)
@@ -69,15 +70,25 @@ int main() {
 }
 ```
 
-- Only pointer form: `_Trait T* p;` (NOT `_Trait T p;`)
-- Trait pointers cannot be dereferenced with `*`
-- Can cast to concrete type: `int* q = (int*)p;` (explicit only, no implicit)
-- Can cast to `void*`: `void* v = (void*)p;` — but `void*` CANNOT be cast back to trait pointer
-- Comparison limited to `==` and `!=` only:
+### Trait pointer variable rules
+
+- Only pointer form: `_Trait T* p;` — **NOT** `_Trait T p;`
+- Trait pointers **cannot be dereferenced** with `*`
+- Multi-level pointers allowed: `_Trait T** q = &p;` — access via `(*q)->method()`
+- `const`/`volatile` qualifiers apply: `const _Trait T* p;` or `_Trait T* const p;`
+- Can be function parameters and return values
+- Conversion: concrete type pointer implicitly converts to trait pointer if `_Impl`'d; reverse requires explicit cast
+- **Comparison** limited to `==` and `!=` only:
   - `p == NULL` / `p != NULL` — OK
-  - `p1 == p2` — OK if same trait type; warning if different trait types
-  - `p == concretePtr` — OK if concrete type implements the trait; warning if it does not
-- Can typedef: `typedef _Trait Printable { ... } P;`
+  - `p1 == p2` — OK if same trait type; **warning** if different trait types
+  - `p == concretePtr` — OK if concrete type implements the trait; warning if not
+
+### Type casting rules
+
+- Cannot cast trait pointer to a non-pointer type
+- Cast to concrete type must be **explicit**: `(int*)p` — no implicit downcasting
+- Cast to `void*` is allowed: `(void*)p`
+- `void*` **CANNOT** be cast back to trait pointer
 
 ## 5. Generic Traits
 
@@ -88,60 +99,84 @@ _Trait Converter<T> {
 
 int int::convert(int* this) { return *this; }
 _Impl _Trait Converter<int> for int;
+
+float float::convert(float* this) { return *this; }
+_Impl _Trait Converter<float> for float;
 ```
 
-- Only instantiated trait can be `_Impl`'d
+### Generic trait rules
+
+- Generic trait definitions follow the same scope rules (top-level only)
+- Only **instantiated** generic traits can be `_Impl`'d: `_Impl _Trait Converter<int> for int;`
 - `_Impl _Trait Converter<T> for int;` is ERROR — `T` is undefined
+- The implementing struct/union type cannot itself be generic:
+  ```c
+  struct G<T> {};
+  _Impl _Trait Converter<int> for struct G<int>;  // ERROR: cannot _Impl for instantiated type
+  ```
+
+### Generic trait pointer variables
+
+- Use instantiated form: `_Trait Converter<int>* p;`
+- Multi-level pointers: `_Trait Converter<int>** q;`
+- `const`/`volatile` on generic trait pointers works the same as non-generic
+- Comparing different instantiations produces a **warning**: `_Trait Converter<int>* t1` vs `_Trait Converter<float>* t3` → warning on `t1 == t3`
+- Casting rules are the same as non-generic trait pointers
 
 ## 6. Complete Example
 
 ```c
 #include <stdio.h>
 
-_Trait Describable {
-    void describe(This* this);
-    int value(This* this);
+// Shape trait with area and side-length methods
+_Trait Shape {
+    float getArea(This* this);
+    float getSideLen(This* this);
 };
 
-struct Circle { float radius; };
+struct Square { float side; };
+struct Rectangle { float width; float height; };
 
-void struct Circle::describe(struct Circle* this) {
-    printf("Circle with radius %f\n", this->radius);
+float struct Square::getArea(struct Square* this) {
+    return this->side * this->side;
 }
-int struct Circle::value(struct Circle* this) {
-    return (int)(this->radius * this->radius * 3);
+float struct Square::getSideLen(struct Square* this) {
+    return this->side * 4;
 }
-_Impl _Trait Describable for struct Circle;
+_Impl _Trait Shape for struct Square;
 
-void int::describe(int* this) {
-    printf("Integer: %d\n", *this);
+float struct Rectangle::getArea(struct Rectangle* this) {
+    return this->width * this->height;
 }
-int int::value(int* this) {
-    return *this;
+float struct Rectangle::getSideLen(struct Rectangle* this) {
+    return (this->width + this->height) * 2;
 }
-_Impl _Trait Describable for int;
+_Impl _Trait Shape for struct Rectangle;
 
 // Dynamic dispatch through trait pointer
-void showInfo(_Trait Describable* obj) {
-    obj->describe();                        // vtable dispatch
-    printf("  value = %d\n", obj->value()); // vtable dispatch
+void showShape(_Trait Shape* s) {
+    printf("  area = %f\n", s->getArea());
+    printf("  perimeter = %f\n", s->getSideLen());
 }
 
 int main() {
-    struct Circle c = {.radius = 5.0};
-    int x = 42;
+    struct Square sq = {.side = 5.0};
+    struct Rectangle rc = {.width = 3.0, .height = 4.0};
 
-    _Trait Describable* p = &c;  // implicit conversion
-    showInfo(p);                 // "Circle with radius 5.0" / "value = 75"
+    _Trait Shape* p = &sq;
+    showShape(p);       // Square: area=25, perimeter=20
 
-    p = &x;                      // reassign to different implementing type
-    showInfo(p);                 // "Integer: 42" / "value = 42"
+    p = &rc;
+    showShape(p);       // Rectangle: area=12, perimeter=14
 
     // Compare trait pointers
-    _Trait Describable* p2 = &c;
+    _Trait Shape* p2 = &sq;
     if (p != p2) {
-        printf("Different objects\n");
+        printf("Different shapes\n");
     }
+
+    // Explicit cast back to concrete type
+    struct Rectangle* rp = (struct Rectangle*)p;
     return 0;
 }
 ```

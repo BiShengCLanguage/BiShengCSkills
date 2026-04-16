@@ -140,9 +140,68 @@ void struct Circle::print(struct Circle* this) { ... }
 _Impl _Trait Printable for struct Circle;
 ```
 
-## 5. Async Mistakes
+## 5. Nullability Mistakes
 
-### 5.1 `_Await` in binary expression
+### 5.1 `_Owned` pointer without `_Nullable` when it can be null
+```c
+// int *_Owned p = nullptr;               // error: _Owned is Nonnull by default
+int *_Owned _Nullable p = nullptr;        // correct
+```
+
+### 5.2 Dereferencing nullable pointer without null check
+```c
+_Safe void f(int *_Borrow _Nullable p) {
+    // *p = 10;                           // error: nullable pointer
+    if (p != nullptr) { *p = 10; }       // correct: null check first
+}
+```
+
+### 5.3 Passing nullable to nonnull parameter
+```c
+_Safe void bar(int *_Borrow p) {}     // nonnull param
+_Safe void f(int *_Borrow _Nullable p) {
+    // bar(p);                          // error: nullable to nonnull
+    if (p != nullptr) { bar(p); }      // correct: checked
+}
+```
+
+## 6. Initialization Mistakes
+
+### 6.1 Using variable before initializing
+```c
+_Safe void f(void) {
+    int x;
+    // int y = x;                       // error: uninitialized
+    x = 42;
+    int y = x;                          // correct
+}
+```
+
+### 6.2 Array element-by-element assignment not counted
+```c
+_Safe void f(void) {
+    int arr[3];
+    arr[0] = 1; arr[1] = 2; arr[2] = 3;
+    // int x = arr[0];                  // error: arr not considered initialized
+    // FIX: use init list or __assume_initialized
+    int arr2[3] = {1, 2, 3};
+    int x = arr2[0];                    // correct
+}
+```
+
+### 6.3 Taking address of uninitialized variable
+```c
+_Safe void f(void) {
+    int x;
+    // int *_Borrow p = &_Mut x;       // error: x uninitialized
+    int x2 = 0;
+    int *_Borrow p = &_Mut x2;         // correct
+}
+```
+
+## 7. Async Mistakes
+
+### 7.1 `_Await` in binary expression
 ```c
 // int result = _Await compute(1) + _Await compute(2);  // error
 int a = _Await compute(1);
@@ -150,7 +209,14 @@ int b = _Await compute(2);
 int result = a + b;
 ```
 
-## 6. Quick Reference
+### 7.2 Multiple `_Await` in same argument list
+```c
+// f(_Await g(), _Await h());          // error: multiple _Await at same level
+int a = _Await g();
+f(a, _Await h());                      // correct: pre-evaluate one
+```
+
+## 8. Quick Reference
 
 | Mistake | Fix |
 |---------|-----|
@@ -168,9 +234,16 @@ int result = a + b;
 | Use after move | Use before transferring ownership |
 | Owned not freed | `safe_free`, pass, or return before scope ends |
 | `_Await` in expr | Assign to variable first |
+| Multiple `_Await` in args | Pre-evaluate one: `int a = _Await g(); f(a, _Await h());` |
 | `_Owned _Borrow` | Illegal — pick one |
 | Borrow of borrow | `T *_Borrow *_Borrow` — restriction (pick single level) |
+| `_Owned` without `_Nullable` | Add `_Nullable` if pointer can be null |
+| Deref nullable | Null-check first: `if (p != nullptr) { *p = ... }` |
+| Array init by element | Use init list `{1,2,3}` or `__assume_initialized` |
+| Uninitialized local | Initialize before use; field-level tracking applies |
 
 > For detailed error codes, see `bsc-errors` Skill
 > For safe zone rules, see `bsc-safe-zone` Skill
 > For ownership rules, see `bsc-ownership` Skill
+> For nullability rules, see `bsc-nullability` Skill
+> For initialization analysis, see `bsc-initialization` Skill

@@ -1,6 +1,6 @@
 ---
 name: bsc-constexpr
-description: "BiSheng C constexpr. When you need to understand constexpr variables, constexpr functions, _Static_assert, constexpr if, type traits (is_integral, is_pointer, etc.), or compile-time evaluation, use this Skill."
+description: "BiSheng C constexpr. When you need to understand constexpr variables, constexpr functions, _Static_assert, constexpr if, type traits (is_integral, is_pointer, is_borrow, is_trivial_data, etc.), conditional type alias, or compile-time evaluation, use this Skill."
 ---
 
 # BiSheng C constexpr Skill
@@ -14,10 +14,17 @@ int arr[SIZE];  // OK: constexpr as array size
 _Static_assert(SIZE == 1024, "wrong");
 ```
 
-- Must be initialized at definition. Integer/bool/char types only (no float/double)
+- Must be initialized at definition
+- **Compile-time computable types**: `bool`, `char` (signed/unsigned char), integer types (`int` and variants with `short`/`signed`/`unsigned`/`long`/`long long`), and aliases of these. Excludes enum types, float/double
 - Cannot be modified after definition
 - Initializer must be a constant expression (literal, other constexpr, constexpr function call)
 - constexpr pointers can only point to global or static variables
+
+### Contexts where constexpr values can be used
+1. `_Static_assert` first parameter
+2. Fixed-length array size: `int arr[CONSTEXPR_VAL]`
+3. Initialize other constexpr constants
+4. Constant generic parameters: `Array<int, CONSTEXPR_VAL>`
 
 ## 2. constexpr Functions
 
@@ -34,13 +41,13 @@ int runtime_result = factorial(x);    // also works at runtime
 **Rules:**
 - Params and return: compile-time computable types only (no void return)
 - Body: no static vars, no non-constexpr calls, no external non-constexpr vars, no asm
-- **Declaration and definition must both have `constexpr`, or neither** -- mismatch is an error
+- **Declaration and definition must both have `constexpr`, or neither** — mismatch is an error
 - Function parameters cannot use constexpr: `int foo(constexpr int a)` is an error
 - Cannot be `_Async` functions
 - Cannot be variadic functions
 - Can modify constexpr generic functions: `constexpr int f<T>() { ... }`
 - Can modify static member functions: `constexpr int int::foo() { ... }`
-- Cannot modify instance member functions (this pointer is not constexpr)
+- Cannot modify instance member functions (`this` pointer is not a compile-time computable type)
 
 ## 3. constexpr if
 
@@ -66,8 +73,8 @@ void process<T>(T value) {
 - float/double conditions are **not allowed**: `if constexpr(5.0)` is an error
 
 **Discarded (false) branch rules:**
-- In **generic context**: discarded branch is not instantiated, so no post-instantiation semantic checking occurs (allows type-dependent code that would be invalid for some T)
-- In **non-generic context**: discarded branch **is** fully type-checked -- it is only dead-code-eliminated, not skipped for semantic analysis
+- In **generic context**: discarded branch is not instantiated — no post-instantiation semantic checking occurs (allows type-dependent code that would be invalid for some T)
+- In **non-generic context**: discarded branch **is** fully type-checked — it is only dead-code-eliminated, not skipped for semantic analysis
 
 ## 4. Type Traits
 
@@ -94,12 +101,29 @@ constexpr bool is_signed<T>();
 constexpr bool is_unsigned<T>();
 constexpr bool is_const<T>();
 constexpr bool is_volatile<T>();
+constexpr bool is_owned_pointer<T>();    // T is an _Owned pointer
+constexpr bool is_owned_struct<T>();     // T is an _Owned struct
+constexpr bool is_borrow<T>();           // T is any _Borrow pointer
+constexpr bool is_immut_borrow<T>();     // T is const _Borrow (immutable)
+constexpr bool is_mut_borrow<T>();       // T is non-const _Borrow (mutable)
 constexpr bool is_move_semantic<T>();    // _Owned pointer, _Owned struct, or struct with _Owned members
-constexpr bool is_owned_pointer<T>();
-constexpr bool is_owned_struct<T>();
+constexpr bool is_trivial_data<T>();     // no raw pointers, _Owned pointers, _Borrow pointers, or _Owned structs
 constexpr size_t rank<T>();              // array dimension count
 constexpr size_t extent<T, size_t N>();  // size of Nth dimension
 ```
+
+**`is_trivial_data<T>()`** — true when T contains no raw pointers, `_Owned` pointers, `_Borrow` pointers, or `_Owned struct` types. Useful for determining if a type can be safely memcpy'd:
+
+```c
+struct Simple { int a; float b; };           // is_trivial_data → true
+struct HasPtr { int *p; };                   // is_trivial_data → false (raw pointer)
+struct HasOwned { int *_Owned p; };          // is_trivial_data → false (_Owned pointer)
+```
+
+**`is_move_semantic<T>()`** — true for three categories:
+1. `_Owned` pointer types
+2. `_Owned struct` types
+3. Struct types containing `_Owned` pointer members
 
 ### 4.3 Type Relationships
 
@@ -116,9 +140,12 @@ Requires `#include <bsc_conditional.hbs>`.
 #include <bsc_conditional.hbs>
 typedef conditional<int C, T, F> = __conditional(int C, T, F);
 
+// When C is non-zero → resolves to type T; when C is zero → resolves to type F
 conditional<1, int, float> x = 42;     // x is int
 conditional<0, int, float> y = 3.14;   // y is float
 ```
+
+C must be a compile-time evaluable constant expression.
 
 ## 5. Complete Example
 
@@ -157,4 +184,5 @@ int main() {
 ```
 
 > For generic functions, see `bsc-generic` Skill
+> For conditional type aliases in generics, see `bsc-generic` Skill
 > For generics/constexpr errors (BSC-E09xx), see `bsc-errors` Skill
