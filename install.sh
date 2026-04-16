@@ -151,7 +151,7 @@ HEADER_EOF
         src="$skill_dir/SKILL.md"
         [ -f "$src" ] || continue
         # Strip YAML frontmatter, output body
-        sed '1,/^---$/d; 1,/^---$/d' "$src"
+        sed '1,/^---$/d' "$src"
         echo ""
         echo "---"
         echo ""
@@ -177,7 +177,7 @@ get_desc() {
 
 # --- Helper: strip YAML frontmatter ---
 strip_frontmatter() {
-    sed '1,/^---$/d; 1,/^---$/d' "$1"
+    sed '1,/^---$/d' "$1"
 }
 
 # --- Install: Claude Code ---
