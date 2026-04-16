@@ -252,6 +252,48 @@ STOP and rewrite: move the qualifier to after `*`. The pattern is ALWAYS `T *_Ow
 
 If you are translating/porting C code to BSC, you MUST load the `/c-to-bsc` skill BEFORE starting.
 Changing file extensions alone is NOT a translation — every pointer must be analyzed and annotated with `_Owned`, `_Borrow`, or left raw where appropriate. Every `malloc` should become `safe_malloc` where possible.
+
+## LSP Tool — BSC Code Intelligence
+
+The LSP tool (hover, findReferences, goToDefinition, goToImplementation) is BSC-aware when clangd is running. Use it to query ownership and borrow information that is not visible from reading code alone.
+
+### hover on `_Owned` / `_Borrow` pointer variables
+
+Returns the variable's full ownership lifecycle within its function:
+
+- **Ownership Flow** — chronological events with line numbers and code snippets:
+  `Declared`, `Moved in from x`, `Moved out to y`, `Moved into foo()`, `Copied in`, `Mut borrow of x`, `Immut borrow of x`, `Mut reborrow of x`, `Init null`, `Freed`, `Dropped`
+- **Live range** — first to last event line
+
+Example output:
+```
+Ownership Flow:
+line 10: Declared
+  int *_Owned p = safe_malloc(42);
+line 18: Moved into consume()
+  consume(p);
+Live range: lines 10-18
+```
+
+### hover on non-pointer variables
+
+If the variable is borrowed from, shows who borrows it:
+```
+Ownership Flow:
+line 15: Mut borrowed by q
+```
+
+### When to use hover for BSC
+
+- Debugging use-after-move/free: hover on the variable to see where it was moved/freed
+- Understanding borrow relationships: hover on the borrowee to see all borrowers
+- Reviewing ownership transfer chains: hover on each variable in the chain
+
+### Other LSP operations
+
+- **findReferences**: works with all BSC constructs (owned/borrow vars, traits, safe zones)
+- **goToDefinition**: works with owned structs, borrow variables, trait methods
+- **goToImplementation**: navigate from trait method declarations to implementations
 CLAUDE_EOF
     fi
 
