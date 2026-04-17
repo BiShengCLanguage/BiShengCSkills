@@ -131,7 +131,100 @@ _Safe int *_Borrow first(Vec<int> *_Borrow this) { ... }
 - If multiple `_Borrow` params: return lifetime = union of all param lifetimes
 - If no `_Borrow` params but return is `_Borrow`: **compile error** — borrow return requires at least one borrow parameter
 
-## 10. Complete Example
+## 10. Design Patterns
+
+These idioms come up repeatedly when the borrow checker rejects "obvious" C-style code.
+
+### 10.1 Iterative traversal → convert to recursion
+
+**Problem:** You want to walk a linked structure via a while-loop, reassigning a cursor
+at each step. The borrow checker forbids this because step N+1's borrow is derived from
+step N's borrow, and reassignment invalidates the chain.
+
+```c
+// WRONG — cannot reassign `current` while borrows live through it
+_Safe T* _Borrow walk(Root* _Borrow root, const Path* _Borrow p) {
+    T* _Borrow current = root;
+    for (size_t i = 0; i < p->length(); i++) {
+        current = current->child(i);   // reassignment conflicts with derived borrow
+    }
+    return current;
+}
+```
+
+**Fix:** convert to tail-recursion. Each recursive call has its own fresh stack frame,
+so the borrow chain stays linear.
+
+```c
+_Safe static T* _Borrow walk_rec(T* _Borrow current, const Path* _Borrow p, size_t i) {
+    if (i >= p->length()) { return current; }
+    return walk_rec(current->child(i), p, i + 1);
+}
+_Safe T* _Borrow walk(Root* _Borrow root, const Path* _Borrow p) {
+    return walk_rec(root, p, 0);
+}
+```
+
+The compiler typically optimizes tail-recursion back into a loop at `-O1` and above, so
+there's no runtime cost. This pattern was necessary for BSC's `path_get_value` in parson.
+
+### 10.2 Chain calls, don't name intermediate borrows
+
+**Problem:** Extracting an intermediate value into a named variable can extend its
+borrow past where you want.
+
+```c
+// Potentially awkward — `obj` borrows from `val` through the whole block
+JSON_Object* _Borrow obj = val.get_object();
+obj->set_string(name, value);
+// ... lots of code ...
+// any other borrow of `val` conflicts with `obj`
+```
+
+**Fix:** when a borrow is used in only one call, chain it:
+
+```c
+val.get_object()->set_string(name, value);
+// no named borrow — no lifetime extension
+```
+
+Name a borrow only when you use it multiple times; otherwise let it be a transient.
+
+### 10.3 Scope the borrow tightly
+
+If you must name a borrow but don't need it for the whole function, wrap it in a
+block so its lifetime ends explicitly:
+
+```c
+{
+    JSON_Object* _Borrow obj = val.get_object();
+    obj->set_string(name, value);
+}   // <-- `obj` released here
+val.validate(&_Mut schema);   // now free to mut-borrow `val` again
+```
+
+### 10.4 Extract the work, not the borrow
+
+**Problem:** you need data from the borrow but also need the borrowee freely afterwards.
+
+```c
+// WRONG — `key` transitively extends `parent`'s borrow
+const String* _Borrow key = parent->get_name(0);
+parent->set_value(key, ...);   // mut-borrow conflicts with key
+```
+
+**Fix:** clone the data you need, drop the borrow, then do the mutation.
+
+```c
+String key_owned;
+{
+    const String* _Borrow key = parent->get_name(0);
+    key_owned = clone_string(key);
+}
+parent->set_value(&_Const key_owned, ...);   // parent is free again
+```
+
+## 11. Complete Example
 
 ```c
 #include <stdio.h>

@@ -119,6 +119,61 @@ int *_Borrow mr = &_Mut x;  // ok: immutable borrow ended
 // }
 ```
 
+### 3.3 Returning a borrow that depends on a local helper value
+
+One of the most common ownership-model collisions. You compute a local `String`
+(or other owned value) to use as a key, then want to return the borrow you looked up
+through it.
+
+```c
+// WRONG — `key` dies at scope exit, but the returned borrow transitively depends on it
+_Safe JSON_Value* _Borrow lookup(Obj* _Borrow this, const char* k) {
+    String key = String::from(k);
+    JSON_Value* _Borrow child = this->get_value(&_Const key);
+    return child;   // error: `key` does not live long enough
+}
+```
+
+**Three legitimate fixes, in order of preference:**
+
+**Fix A — Take the key as a borrow from the caller** (best). The caller owns the
+`String`, its lifetime covers the call:
+```c
+_Safe JSON_Value* _Borrow lookup(Obj* _Borrow this, const String* _Borrow key) {
+    return this->get_value(key);
+}
+```
+
+**Fix B — Recursion** when the helper value is produced per-step of a traversal.
+Pass the remainder of the path into a recursive call; the helper's lifetime is
+self-contained to one recursion level:
+```c
+_Safe static T* _Borrow navigate(Parent* _Borrow p, const Path* _Borrow path, size_t pos) {
+    String segment = path->slice(pos, ...);   // local; destroyed at return
+    T* _Borrow child = p->get(&_Const segment);
+    // tail-call recursion carries child's lifetime, not segment's
+    return navigate_further(child, path, next_pos);
+}
+```
+
+**Fix C — Minimal `_Unsafe` block** when the lookup genuinely has a lifetime the
+checker can't model (e.g., hash-map hit is guaranteed to return a pointer into
+existing data). Cast through raw pointer:
+```c
+_Safe JSON_Value* _Borrow lookup(Obj* _Borrow this, const char* k) {
+    String key = String::from(k);
+    _Unsafe {
+        JSON_Value* _Borrow child = (JSON_Value* _Borrow)this->get_value(&_Const key);
+        // `key` destroyed at end of block, but the returned borrow points into `this`,
+        // not into `key` — checker can't see that.
+        return child;
+    }
+}
+```
+
+Use Fix C only when A and B are structurally impossible. Document **why** — next reader
+will ask. This is the pattern used by `dotget_value` in parson.
+
 ## 4. Trait Mistakes
 
 ### 4.1 Non-pointer trait variable

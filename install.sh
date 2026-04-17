@@ -248,6 +248,24 @@ STOP and rewrite: move the qualifier to after `*`. The pattern is ALWAYS `T *_Ow
 - **Prefer `safe_free((void *_Owned)p)`** — frees an owned pointer
 - Raw `malloc`/`free` require `_Unsafe` context and `(T *_Owned)` cast
 
+## Before Planning Any Non-Trivial BSC Change
+
+You MUST load `/bsc-design` BEFORE writing a plan or implementation that involves any of:
+
+- Adding a new function with `_Owned` or `_Borrow` parameters
+- Designing a new struct, especially `_Owned struct`
+- Choosing where the `_Safe` / `_Unsafe` boundary goes
+- Returning a value vs `*_Owned` pointer at an API edge
+- Member-function vs free-function organization
+- Replacing a C union, designing destructors, or any refactor that changes ownership flow
+- Any change that touches more than one function's ownership timeline
+
+Skip only for: typo fixes, comment edits, single-line bug fixes that don't change types or
+signatures, or pure documentation changes.
+
+The skill provides 7 rules of thumb plus worked examples. Consulting it once at PLANNING
+time is much cheaper than rewriting a plan after the borrow checker rejects it.
+
 ## C-to-BSC Translation
 
 If you are translating/porting C code to BSC, you MUST load the `/c-to-bsc` skill BEFORE starting.
@@ -255,14 +273,34 @@ Changing file extensions alone is NOT a translation — every pointer must be an
 
 ## LSP Tool — BSC Code Intelligence
 
-The LSP tool (hover, findReferences, goToDefinition, goToImplementation) is BSC-aware when clangd is running. Use it to query ownership and borrow information that is not visible from reading code alone.
+The LSP tool (`hover`, `findReferences`, `goToDefinition`, `goToImplementation`, `documentSymbol`, `workspaceSymbol`, `prepareCallHierarchy`, `incomingCalls`, `outgoingCalls`) is BSC-aware when clangd is running and configured for `.cbs`/`.hbs`.
+
+### IMPORTANT: Check LSP availability first
+
+Before relying on LSP, probe with one call (e.g. `hover` on a known symbol). If it returns
+`No LSP server available for file type: .cbs`, the BSC-aware LSP is NOT registered in this
+environment. Fall back to manual analysis (Read + Grep) and tell the user.
+
+### Use LSP proactively when reasoning about ownership
+
+When you're about to make a non-trivial change to BSC code involving `_Owned` or `_Borrow`
+pointers, USE LSP FIRST instead of guessing from local context. Specifically:
+
+1. **Before adding/removing a function call that takes an `_Owned` argument**:
+   `hover` on the variable to see if it's been moved already.
+2. **Before introducing a new borrow** (`&_Const x` or `&_Mut x`):
+   `hover` on `x` to see existing borrowers — overlapping mutable borrows = compile error.
+3. **When a borrow-checker error mentions a variable**:
+   `hover` on that variable's declaration. The Ownership Flow tells you exactly where it
+   was moved/borrowed/freed.
 
 ### hover on `_Owned` / `_Borrow` pointer variables
 
 Returns the variable's full ownership lifecycle within its function:
 
 - **Ownership Flow** — chronological events with line numbers and code snippets:
-  `Declared`, `Moved in from x`, `Moved out to y`, `Moved into foo()`, `Copied in`, `Mut borrow of x`, `Immut borrow of x`, `Mut reborrow of x`, `Init null`, `Freed`, `Dropped`
+  `Declared`, `Moved in from x`, `Moved out to y`, `Moved into foo()`, `Copied in`,
+  `Mut borrow of x`, `Immut borrow of x`, `Mut reborrow of x`, `Init null`, `Freed`, `Dropped`
 - **Live range** — first to last event line
 
 Example output:
@@ -275,25 +313,21 @@ line 18: Moved into consume()
 Live range: lines 10-18
 ```
 
-### hover on non-pointer variables
+### Known limitations — when to fall back to Grep
 
-If the variable is borrowed from, shows who borrows it:
-```
-Ownership Flow:
-line 15: Mut borrowed by q
-```
+clangd does not fully understand BSC's member-function call syntax (`obj->method(...)`
+resolved against `T::method`). This affects:
 
-### When to use hover for BSC
+- **findReferences** on a member function often returns only the declaration site,
+  missing call sites. Always cross-check with `Grep` before renaming/deleting a symbol.
+- **incomingCalls** may report "no incoming calls" for a function clearly called via
+  `obj->method()`. Use `Grep` for call-site discovery.
 
-- Debugging use-after-move/free: hover on the variable to see where it was moved/freed
-- Understanding borrow relationships: hover on the borrowee to see all borrowers
-- Reviewing ownership transfer chains: hover on each variable in the chain
+### Net rule of thumb
 
-### Other LSP operations
-
-- **findReferences**: works with all BSC constructs (owned/borrow vars, traits, safe zones)
-- **goToDefinition**: works with owned structs, borrow variables, trait methods
-- **goToImplementation**: navigate from trait method declarations to implementations
+- Use **LSP** for ownership/type questions about a specific variable in a specific function.
+- Use **Grep** for cross-file discovery and call-site enumeration.
+- They are complements, not substitutes.
 CLAUDE_EOF
     fi
 

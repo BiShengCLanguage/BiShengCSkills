@@ -428,6 +428,74 @@ fail:
     return nullptr;
 ```
 
+### Step 6.5: Subtle Expression Translations
+
+BSC is a *superset* of C, so expression-level C still compiles. But when you restructure
+code — especially when splitting lines to fit the ownership model — a few C idioms
+silently change meaning. Check these explicitly.
+
+#### Post-decrement / post-increment in loops
+
+C's `while (length--)` decrements **after** the condition check. If you split this across
+lines in BSC (common when you need to insert a bounds check or a borrow), the order
+flips.
+
+```c
+// C original — length decrements AFTER the test
+while (length--) {
+    if (strchr("xX", string[length])) { ... }
+}
+
+// WRONG BSC translation — accesses the null terminator on first iteration
+while (length) {
+    if (strchr("xX", string->at(cur_index + length))) { ... }
+    length -= 1;
+}
+
+// CORRECT — decrement BEFORE access
+while (length) {
+    length -= 1;
+    if (strchr("xX", string->at(cur_index + length))) { ... }
+}
+```
+
+Real bug from parson port: `is_decimal` silently rejected every number because on the
+first iteration it accessed position `length` (the null terminator), and `strchr("xX", '\0')`
+returns non-NULL (finds the trailing `\0` of the needle string).
+
+#### Pointer-based offsets vs. index-based offsets
+
+C uses `string + start` to point into a buffer. In BSC with `String`, you've got an index
+`start` into a container — the base pointer moves, but your index arithmetic is relative
+to the container's start.
+
+```c
+// C: pointer p moves with the caller's position
+strncmp(p, "-0", 2)
+
+// WRONG BSC: compares from start of whole string, not from cur_index
+strncmp((const char*)string->as_str(), "-0", 2)
+
+// CORRECT: explicit offset into the container
+strncmp((const char*)string->get(cur_index), "-0", 2)
+```
+
+Also a real parson bug — `is_decimal` compared `-0` against the beginning of the input
+instead of the number's start.
+
+#### `sizeof(expr) - 1` for string literals
+
+C macros like `SIZEOF_TOKEN(s)` (`sizeof(s) - 1`) work identically in BSC, but only for
+**array** literals. If you accidentally pass a `String` or `const char *`, `sizeof` gives
+the pointer size, not the string length. Audit every `sizeof`-on-a-string.
+
+#### Pointer arithmetic on `String` content
+
+`string[i]` in C becomes `string->at(i)` in BSC — which does a **bounds check**. If
+your C code relied on reading past the known length (common in fast lexers), you now
+get an OOB panic. Use `string->at(i)` inside an explicit bound or use the raw buffer
+via `as_str()` + `_Unsafe`.
+
 ### Step 7: Compile and Fix
 
 ```bash
