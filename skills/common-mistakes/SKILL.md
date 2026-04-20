@@ -174,6 +174,72 @@ _Safe JSON_Value* _Borrow lookup(Obj* _Borrow this, const char* k) {
 Use Fix C only when A and B are structurally impossible. Document **why** — next reader
 will ask. This is the pattern used by `dotget_value` in parson.
 
+### 3.4 How to read BSC borrow-checker diagnostics
+
+The BSC compiler's borrow diagnostics are more informative than they look at
+first. **Always read the `note:` lines, not just the `error:` line** — the
+`note:` is where the hint lives.
+
+**Borrow conflict (alias):**
+```
+file.cbs:22:29: error: cannot borrow `b` as mutable more than once at a time
+file.cbs:21:29: note: first mut borrow occurs here
+```
+The `note:` tells you exactly which earlier line started the conflicting
+borrow. Fix: scope the first borrow tighter (wrap it in a block that ends
+before the second borrow) or restructure so only one is live at a time.
+
+**Borrow across a conflicting mutation:**
+```
+error: cannot use `X` because it was mutably borrowed
+error: cannot borrow `*X` as mutable more than once at a time
+```
+Same idea — `note:` points to the first borrow. Typical fix: scope that first
+borrow, or do the operation in a different order.
+
+**Use after move (no `note:` today — known gap):**
+```
+file.cbs:12:13: error: use of moved value: `b`
+```
+The compiler currently does NOT print a `note:` for where `b` was moved. Use
+LSP `hover` on `b`'s declaration to see its full ownership flow (it shows
+`Moved into foo()` with the exact line). See `/bsc-compile` §5 for LSP setup.
+
+**Lifetime / borrow returns:**
+```
+error: no _Borrow qualified type found in the function parameters,
+       the return type is not allowed to be _Borrow qualified
+```
+This explains the rule directly — the function returns a `_Borrow` but has
+no `_Borrow` param whose lifetime the return could be tied to. Fix: add a
+`_Borrow` parameter whose lifetime matches the returned borrow, or return
+an owned value instead.
+
+**Not-obvious messages that trip people up:**
+- `does not live long enough` — the compiler name for a local whose
+  lifetime is shorter than the context demands (usually a returned
+  `_Borrow` pointing to a local). See §3.3 for three fixes.
+- `cannot cast between _Owned and raw pointer` — you need
+  `__take_from_raw` / `__move_to_raw` for ownership transfer, or
+  `(T *)&_Mut *p` / `(T *)&_Const *p` for a non-transferring cast.
+
+**When the diagnostic still isn't enough, use LSP hover:**
+
+Hover on the complaining variable — BSC's LSP (when configured; see
+`/bsc-compile` §5) reports its **full ownership timeline including the
+live range**:
+
+```
+Ownership Flow:
+line 21: Declared
+line 21: Mut borrow of b
+Live range: lines 21-21
+```
+
+For an owned value, hover also shows `Moved into foo()` with line numbers.
+This is the information the use-after-move diagnostic should print but
+doesn't — LSP fills the gap.
+
 ## 4. Trait Mistakes
 
 ### 4.1 Non-pointer trait variable
@@ -319,7 +385,7 @@ bug is in your library's heap-pointer aliasing.
 
 **Do NOT use `clang -cc1 -fsyntax-only` for this** — it lacks system includes,
 which makes every `_Owned struct` spuriously "invalid" in the AST. See the
-`/bsc-compile` skill section 5 for details.
+`/bsc-compile` skill §6 for details.
 
 ### 8.4 Common library-level causes of double-free
 

@@ -85,7 +85,47 @@ BSC has two include directories that may need `-I` flags:
 /path/to/bsc/bin/clang -Xclang -ast-dump -fsyntax-only file.cbs
 ```
 
-## 5. Inspecting Destructor Insertion (Debugging Memory Bugs)
+## 5. Reading BSC Compiler Diagnostics
+
+### Always read `note:` lines alongside `error:`
+
+The BSC compiler emits `note:` source locations alongside borrow-checker
+errors to tell you **where the conflicting prior borrow started**:
+
+```
+file.cbs:22:29: error: cannot borrow `b` as mutable more than once at a time
+file.cbs:21:29: note: first mut borrow occurs here
+```
+
+Without reading the `note:`, the error looks opaque. Reading it, the fix
+becomes obvious — scope the borrow on line 21 to end before line 22.
+
+**Known gaps** (as of current compiler):
+- `error: use of moved value: X` has NO accompanying `note:` pointing to
+  the move site. Use LSP `hover` on `X` to see the move location.
+- No `help:` suggestions for fix patterns — you have to know the idioms
+  (see `/bsc-common-mistakes` §3.3 for the "local-borrow-outlives" recipes).
+
+### LSP is the canonical source for live-range info
+
+`hover` on any `_Owned` or `_Borrow` variable returns the full ownership
+timeline AND an explicit live range:
+
+```
+Ownership Flow:
+line 21: Declared
+line 21: Mut borrow of b
+Live range: lines 21-21
+```
+
+For owned values: hover shows `Moved into foo()` / `Freed` / `Dropped`
+events with exact line numbers.
+
+When the compiler diagnostic is terse, **always check LSP hover** on the
+variable the error names — it has more detail than the diagnostic prints.
+See §6 below for destructor-bug debugging via LSP + AST dump.
+
+## 6. Inspecting Destructor Insertion (Debugging Memory Bugs)
 
 When you hit a runtime `double free` or `use after free` and suspect the
 compiler's destructor insertion is wrong, the source of truth is the
@@ -190,7 +230,7 @@ If the AST shows for variable `b`:
 call appears inside an `if`/`while`/`for`/`switch` condition. If yes, you've hit
 the documented compiler bug. See common-mistakes §8.6 for workaround.
 
-## 6. Diagnostic Suppression
+## 7. Diagnostic Suppression
 
 BSC safety checks are errors by default. To suppress specific diagnostics, use `-Eno-<identifier>` on the command line or `#pragma` in source.
 
