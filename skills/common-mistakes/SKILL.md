@@ -344,6 +344,83 @@ When the compiler is doing the right thing, the real cause is usually one of:
 4. Only THEN consider compiler-level bug. In practice, >90% of double-frees in
    BSC projects trace to library-level aliasing, not codegen.
 
+### 8.6 Known compiler bug: `_Owned` arg in `if`/`while`/`for` condition is not move-tracked
+
+The BSC destructor desugar pass (`SemaBSCDestructor.cpp::VisitCompoundStmt`) only
+runs move-tracking for statements whose **outer** type is `BinaryOperator`,
+`DeclStmt`, or `CallExpr`. When a function call consuming an `_Owned` argument
+appears **inside an `if`/`while`/`for`/`switch` condition**, the outer statement
+is `IfStmt` (etc.), so the move-tracking is skipped entirely. The `is_moved`
+flag never gets set to 1, and the destructor fires at scope exit on already-freed
+memory → double free.
+
+**Symptom:** `free(): double free detected in tcache 2` immediately after a
+function call that takes `_Owned` argument(s) and is wrapped in an `if` condition.
+
+**Minimal reproducer (29 lines):**
+
+```c
+#include "bishengc_safety.hbs"
+#include <stdlib.h>
+
+_Owned struct Box {
+_Public:
+    int *_Owned data;
+    ~Box(Box this) {
+        _Unsafe { free((void*)__move_to_raw(this.data)); }
+    }
+};
+
+_Safe Box Box::new(void) {
+    Box b = { .data = safe_malloc(0) };
+    return b;
+}
+
+_Safe int consume(Box b) { return 1; }   /* takes ownership */
+
+int main(void) {
+    Box b = Box::new();
+    if (consume(b) == 1) { }  /* BUG: b not marked moved → double free at } */
+    return 0;
+}
+```
+
+**AST evidence** — dump with `clang -Xclang -ast-dump -fsyntax-only`:
+- Working pattern (`int r = consume(b); if (r == 1) {}`): AST shows
+  `BinaryOperator '=' b_is_moved = 1` after the call.
+- Buggy pattern (`if (consume(b) == 1) {}`): NO `b_is_moved = 1` assignment,
+  only the initial `b_is_moved = 0` and the destructor `if (!b_is_moved)` check.
+
+**Workaround** — store the call result in a local before testing:
+
+```c
+// BAD — double free
+if (consume(owned_value) == 1) { ... }
+
+// GOOD — extract the call
+int result = consume(owned_value);
+if (result == 1) { ... }
+
+// ALSO GOOD — call as standalone statement
+consume(owned_value);
+if (some_other_check) { ... }
+```
+
+**This bug applies to**:
+- `if (call(owned) ...)` and `if (... call(owned) ...)`
+- `while (call(owned) ...)`, `for (...; call(owned); ...)`
+- `switch (call(owned))`
+- Any condition expression containing a `CallExpr` that consumes `_Owned` args
+
+**This bug does NOT apply to**:
+- `T result = call(owned);` followed by `if (result ...)` — DeclStmt is checked
+- `call(owned);` as a standalone statement — CallExpr is checked
+- `lhs = call(owned);` as a top-level assignment — BinaryOperator is checked
+
+**When you suspect this bug:** convert one suspected call site to the workaround
+form. If the double-free goes away, you've confirmed it. Apply the same workaround
+to all sibling sites in the same scope.
+
 ## 9. Quick Reference
 
 | Mistake | Fix |

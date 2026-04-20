@@ -155,9 +155,40 @@ Don't let template-form `<dependent type>` markers spook you into a false
    state (parser globals, allocation counters) that triggers the bug later.
 3. **Dump the driver-mode AST** and verify the `_is_moved` flag machinery
    for the suspected variable.
-4. **Only after 1-3** consider compiler-level bug hypotheses. In practice,
-   >90% of double-frees in BSC projects trace to library-level aliasing in
-   `_Owned struct` layouts, not compiler codegen.
+4. **Only after 1-3** consider compiler-level bug hypotheses. Confirmed
+   compiler bugs exist (see common-mistakes §8.6 for the `if`-condition
+   move-tracking bug), but library-level aliasing is the more common cause.
+
+### Useful grep patterns on AST dumps
+
+```bash
+# Save the full AST for grepping (driver mode!)
+clang -Xclang -ast-dump -fsyntax-only file.cbs -I./include 2>/dev/null > ast.txt
+
+# Find the move-flag VarDecl + every assignment + the destructor IfStmt for `varname`
+grep -B1 -A2 "varname_is_moved" ast.txt
+
+# Find all RecoveryExpr / dependent-type markers on non-template code (real bug indicator)
+grep -B2 "RecoveryExpr\|<dependent type> contains-errors" ast.txt | grep -v "<T>"
+
+# Show only the body of a specific function
+sed -n '/FunctionDecl.*funcname/,/^|-/p' ast.txt
+
+# Look for missing move tracking (declaration without any assignment to 1)
+# If you see VarDecl '...is_moved' but no BinaryOperator '=' setting it,
+# the compiler missed a move event — likely the if-condition bug.
+```
+
+### Spotting the if-condition compiler bug from the AST
+
+If the AST shows for variable `b`:
+- A `VarDecl 'b_is_moved'` (declared, init 0)
+- A destructor `IfStmt` checking `!b_is_moved`
+- BUT no `BinaryOperator '=' b_is_moved = 1` between them
+
+…and there's a function call consuming `b` in the source — check whether that
+call appears inside an `if`/`while`/`for`/`switch` condition. If yes, you've hit
+the documented compiler bug. See common-mistakes §8.6 for workaround.
 
 ## 6. Diagnostic Suppression
 
