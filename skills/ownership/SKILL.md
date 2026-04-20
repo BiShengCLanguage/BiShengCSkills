@@ -194,4 +194,49 @@ _Safe int main(void) {
 - **Partial move is prohibited**: at scope end, an `_Owned struct` must be either fully owned (nothing moved out) or entirely moved as a whole. Moving individual `_Owned` members while keeping the struct causes a compile error
 - Global `_Owned struct` variables do not have their destructors called (including function-local `static`)
 
-> See also: `bsc-borrowing`, `bsc-safe-zone`, `bsc-nullability`, `bsc-errors` Skills
+### 7.2 Pitfall: Tagged-struct as union-replacement carries hidden cost
+
+When you replace a C union with an `_Owned struct` containing all variant
+fields (a common pattern because BSC has no safe `_Owned` union), **every
+instance carries the destructor cost of every variant**, not just the active one.
+
+```c
+// Replaces a C union { Object*; Array*; double; ... }
+_Owned struct ValueValue {
+_Public:
+    String         string;
+    double         number;
+    Object* _Owned object;   // heap-allocated for EVERY instance
+    Array*  _Owned array;    // heap-allocated for EVERY instance
+    int            boolean;
+
+    ~ValueValue(ValueValue this) {
+        free_Object(this.object);   // ALWAYS runs, even for non-Object values
+        free_Array(this.array);
+    }
+};
+```
+
+Consequences to be aware of:
+
+- Construction allocates **all** heap pointers via `safe_malloc` (one per
+  variant pointer field), even for primitive variants like `JSONNull` or
+  `JSONBoolean`.
+- Destruction calls `safe_free` on **all** of them — so any aliasing across
+  instances (especially through `clone` paths or `safe_swap` patterns)
+  doubles the free.
+- Memory cost is constant per value but **multiplies across containers**
+  (a `Vec<ValueValue>` of 1000 nulls still allocates 1000 Objects + 1000 Arrays).
+
+**Mitigations to consider at design time** (cross-ref `/bsc-design` Rule 7
+and §2 "Replacing C unions"):
+
+- Trait-based sum type for genuinely heterogeneous variants
+- Lazy initialization (allocate inner heap only when the variant is set)
+- Accept the cost and document it explicitly with a FIXME
+
+When debugging double-frees in code that uses this pattern, the most likely
+cause is field-level aliasing introduced by `clone` or `safe_swap` on the
+all-fields struct — see `/bsc-common-mistakes` §8.
+
+> See also: `bsc-borrowing`, `bsc-safe-zone`, `bsc-nullability`, `bsc-design`, `bsc-errors` Skills

@@ -85,7 +85,81 @@ BSC has two include directories that may need `-I` flags:
 /path/to/bsc/bin/clang -Xclang -ast-dump -fsyntax-only file.cbs
 ```
 
-## 5. Diagnostic Suppression
+## 5. Inspecting Destructor Insertion (Debugging Memory Bugs)
+
+When you hit a runtime `double free` or `use after free` and suspect the
+compiler's destructor insertion is wrong, the source of truth is the
+**post-desugar AST** in driver mode.
+
+### CRITICAL: Use the driver, not `-cc1` directly
+
+```bash
+# WRONG — missing system includes, makes every _Owned struct spuriously
+# "invalid", producing misleading RecoveryExpr / <dependent type> AST nodes
+clang -cc1 -fsyntax-only -ast-dump file.cbs -I./include
+
+# RIGHT — driver picks up system includes (stdlib.h, string.h, etc.)
+clang -Xclang -ast-dump -fsyntax-only file.cbs -I./include
+```
+
+In `-cc1` mode without system includes, `stdlib.h` is not found → `bishengc_safety.hbs`
+fails to parse → every `_Owned struct` using `String`/`Vec` gets marked
+`referenced invalid struct ... definition` → every member access through them
+becomes `RecoveryExpr` / `CXXDependentScopeMemberExpr`. This AST looks broken
+but does not reflect what actual codegen produces. **Always use driver mode
+(`-Xclang -ast-dump`) for destructor-related debugging.**
+
+### What correct destructor insertion looks like
+
+For every `_Owned struct` local or parameter, the desugared AST should show:
+
+```
+# At function/parameter entry:
+DeclStmt
+  VarDecl 'varname_is_moved' 'bool' cinit
+    IntegerLiteral 'int' 0
+
+# After a CallExpr or BinaryOperator that uses the var:
+BinaryOperator 'bool' '='
+  DeclRefExpr 'varname_is_moved' 'bool'
+  IntegerLiteral 'int' 1
+
+# At scope exit (or ReturnStmt):
+IfStmt
+  UnaryOperator '!' → DeclRefExpr 'varname_is_moved'
+  CallExpr → BSCMethod '~TypeName' → DeclRefExpr 'varname'
+```
+
+If all three pieces are present and well-formed for the variable you suspect,
+**the compiler's insertion is correct** and the bug is elsewhere (usually
+aliasing between heap-pointer fields in your struct layout).
+
+### Generic templates dump differently
+
+`Vec<T>::insert_at` in its **template form** shows `<dependent type>` on every
+member access through `T` — this is normal. Destructor desugaring runs
+**per-instantiation**, so check `Vec<ConcreteType>::insert_at` (search the AST
+dump for the mangled/instantiated form) to see real codegen.
+
+Don't let template-form `<dependent type>` markers spook you into a false
+"compiler bug" diagnosis.
+
+### Triage flow when debugging a destructor-related double-free
+
+1. **Reproduce under valgrind first** — `valgrind --leak-check=no ./binary`.
+   The "Invalid read" stack traces show both the failing free AND the prior
+   free site, plus the `malloc` origin. This localizes the bug far better
+   than gdb on the abort.
+2. **Check for test-order pollution** — does the failing function work in a
+   fresh binary with just that code? If yes, a prior test is leaving global
+   state (parser globals, allocation counters) that triggers the bug later.
+3. **Dump the driver-mode AST** and verify the `_is_moved` flag machinery
+   for the suspected variable.
+4. **Only after 1-3** consider compiler-level bug hypotheses. In practice,
+   >90% of double-frees in BSC projects trace to library-level aliasing in
+   `_Owned struct` layouts, not compiler codegen.
+
+## 6. Diagnostic Suppression
 
 BSC safety checks are errors by default. To suppress specific diagnostics, use `-Eno-<identifier>` on the command line or `#pragma` in source.
 

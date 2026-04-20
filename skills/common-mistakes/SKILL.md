@@ -271,7 +271,80 @@ int a = _Await g();
 f(a, _Await h());                      // correct: pre-evaluate one
 ```
 
-## 8. Quick Reference
+## 8. Debugging Runtime Memory Bugs
+
+When BSC code compiles cleanly but **double-frees** or **uses freed memory**
+at runtime, follow this triage flow before suspecting the compiler.
+
+### 8.1 Use valgrind, not gdb, to localize double-free
+
+`free(): double free detected in tcache 2` from glibc gives you only the second
+free's stack trace under gdb. Valgrind shows BOTH frees and the original `malloc`,
+which is what you need to find the aliasing root cause.
+
+```bash
+valgrind --error-exitcode=1 --leak-check=no ./binary
+```
+
+Look for the "Invalid read" / "Invalid free" report. The "Address X is N bytes inside
+a block of size M free'd" line tells you where the same address was freed earlier,
+plus the stack at that earlier free.
+
+### 8.2 Rule out test-order pollution before blaming the compiler
+
+If a function works in isolation (standalone repro binary) but fails when called
+after other tests in a larger suite, the bug is **state pollution**, not codegen:
+
+- **Mutable globals** (e.g., parser cursors, allocation counters) that earlier
+  tests left in a non-zero state
+- **Static caches** in your library that don't reset between calls
+- **Heap layout sensitivity** — a leak in test N only manifests as a double-free
+  in test N+M when allocation sizes happen to alias
+
+Reproduce with: build a minimal `main` that calls **only the failing function**
+in a fresh process. If it passes, the bug is contextual.
+
+### 8.3 Inspect the desugared AST (driver mode) before claiming compiler bug
+
+Most "compiler bug" hypotheses for destructor double-frees turn out to be wrong.
+Verify with:
+
+```bash
+clang -Xclang -ast-dump -fsyntax-only file.cbs -I./include
+```
+
+Look for the `varname_is_moved` flag and the `if (!varname_is_moved) ~Type(varname)`
+IfStmt for the variable you suspect. If the compiler's machinery is intact, the
+bug is in your library's heap-pointer aliasing.
+
+**Do NOT use `clang -cc1 -fsyntax-only` for this** — it lacks system includes,
+which makes every `_Owned struct` spuriously "invalid" in the AST. See the
+`/bsc-compile` skill section 5 for details.
+
+### 8.4 Common library-level causes of double-free
+
+When the compiler is doing the right thing, the real cause is usually one of:
+
+- **Tagged-struct-as-union**: every instance carries a heap pointer for every
+  variant, so two instances can alias if construction shares pointers
+  unintentionally. See `/bsc-design` Rule 7 and §2 "Replacing C unions."
+- **`safe_swap` between aliased pointers**: a swap that leaves both sides
+  pointing at overlapping ownership.
+- **Returning a borrow whose underlying owned value is moved by the caller**:
+  the borrow becomes dangling.
+- **Manual `_Unsafe` byte-assignment overwriting an `_Owned` slot without
+  destructing the previous contents**: the old heap pointers leak (single
+  copy) or alias (if they were just shifted in by `memmove`).
+
+### 8.5 Triage flow summary
+
+1. Reproduce under valgrind → get both free sites + malloc origin.
+2. Test in isolation → confirm/deny test-order pollution.
+3. Driver-mode AST dump → confirm compiler destructor insertion is correct.
+4. Only THEN consider compiler-level bug. In practice, >90% of double-frees in
+   BSC projects trace to library-level aliasing, not codegen.
+
+## 9. Quick Reference
 
 | Mistake | Fix |
 |---------|-----|
