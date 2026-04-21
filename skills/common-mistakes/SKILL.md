@@ -487,6 +487,120 @@ if (some_other_check) { ... }
 form. If the double-free goes away, you've confirmed it. Apply the same workaround
 to all sibling sites in the same scope.
 
+### 8.7 Known compiler bug: destructor of `_Owned` local fires BEFORE a return expression that borrows it
+
+The destructor desugar pass emits the destructor `IfStmt` for each `_Owned` local
+as a sibling statement **before** the `ReturnStmt` at scope end. If the return
+expression is a call that reads through a borrow of that local
+(`return f(&_Const b, ...)`), the call runs **on already-destructed memory** and
+returns a wrong value. No crash, no warning — just a silently-corrupt return.
+
+This is distinct from §8.6: that one is a missing move-flag assignment in an
+`if`/`while` condition. This one is misordering between destructor insertion
+and the `ReturnStmt`'s operand evaluation, even when no move is involved.
+
+**Symptom:** a `_Safe` function returning `_Bool` or `int` that contains an
+`_Owned` local and a `return f(...borrow of that local...);` returns the wrong
+value. Adding any `_Unsafe { printf(...); }` between the call and the return
+makes it "start working" — because the print forces the value into a named
+temporary whose lifetime spans the destructor.
+
+**Minimal reproducer (30 lines):**
+
+```c
+#include "string.hbs"
+#include <stdio.h>
+
+_Safe static String make(void) { _Unsafe { return String::from("x"); } }
+
+_Safe static _Bool buggy(const String* _Borrow a) {
+    String b = make();
+    return a->equals(&_Const b);   /* BUG: returns 0 even though a == b */
+}
+
+_Safe static _Bool stashed(const String* _Borrow a) {
+    String b = make();
+    _Bool r = a->equals(&_Const b);
+    return r;                       /* OK: returns 1 */
+}
+
+int main(void) {
+    String a = make();
+    _Unsafe {
+        printf("buggy   = %d\n", (int)buggy  (&_Const a));  /* prints 0 */
+        printf("stashed = %d\n", (int)stashed(&_Const a));  /* prints 1 */
+    }
+    return 0;
+}
+```
+
+**AST evidence** — dump with `clang -Xclang -ast-dump -fsyntax-only`.
+
+Buggy pattern's `CompoundStmt`:
+```
+├── DeclStmt: b = make()
+├── DeclStmt: b_is_moved = 0
+├── IfStmt: if (!b_is_moved) ~String(b)     ← destructor fires HERE
+└── ReturnStmt
+    └── CallExpr: a->equals(&_Const b)      ← b read AFTER destructor
+```
+
+Stashed pattern's `CompoundStmt`:
+```
+├── DeclStmt: b = make()
+├── DeclStmt: b_is_moved = 0
+├── DeclStmt: r = a->equals(&_Const b)      ← b read BEFORE destructor
+├── IfStmt:  if (!b_is_moved) ~String(b)
+└── ReturnStmt: return r
+```
+
+Same set of nodes, different order. The pass inserts the destructor `IfStmt` at
+the end of the statement list regardless of whether the trailing `ReturnStmt`'s
+operand still borrows the owned local.
+
+**Triggering conditions** — all three must hold:
+1. The function has an `_Owned` local (`String`, any `_Owned struct`) still in scope at return.
+2. The return expression is a `CallExpr` that takes a `*_Borrow` to that local (directly or transitively through another arg).
+3. The callee actually **dereferences** that borrow to compute the return value. Callees that ignore the borrow argument don't trigger the bug.
+
+**Workaround** — stash the call result in a named local first:
+
+```c
+// BAD — wrong return value
+_Safe _Bool check(const String* _Borrow a) {
+    String b = make();
+    return a->equals(&_Const b);
+}
+
+// GOOD — same code, result stashed in a local
+_Safe _Bool check(const String* _Borrow a) {
+    String b = make();
+    _Bool r = a->equals(&_Const b);
+    return r;
+}
+```
+
+The stashing forces the use of `b` into an earlier `DeclStmt`, which completes
+before the destructor slot. The `ReturnStmt` then only reads `r` (a plain
+`_Bool`, no borrow), so the destructor ordering no longer matters.
+
+**How to notice this bug in the wild:** the values coming back from a helper
+function look inverted or nonsensical, but the helper's own logic is correct.
+Insert a `printf` between the last borrow-use and the return — if the bug
+disappears, you're hitting §8.7. Apply the stash workaround.
+
+**This bug applies to any return-expression shape where the return value depends
+on a callee reading through a borrow of an in-scope `_Owned` local**, including:
+- `return owned_local.method(...);` where the method reads `this`
+- `return helper(&_Const owned_local);`
+- `return outer(inner(&_Const owned_local));`
+
+**This bug does NOT apply when:**
+- The return expression doesn't reference the `_Owned` local at all
+- The return value is already a plain copy computed before the return statement
+- The `_Owned` local has been moved out before the return (then the destructor
+  is skipped by `b_is_moved=1`, and there's no freed-memory read)
+
 ## 9. Quick Reference
 
 | Mistake | Fix |
@@ -512,6 +626,7 @@ to all sibling sites in the same scope.
 | Deref nullable | Null-check first: `if (p != nullptr) { *p = ... }` |
 | Array init by element | Use init list `{1,2,3}` or `__assume_initialized` |
 | Uninitialized local | Initialize before use; field-level tracking applies |
+| Wrong return value from borrow of owned local | Stash into a local first; see §8.7 |
 
 > For detailed error codes, see `bsc-errors` Skill
 > For safe zone rules, see `bsc-safe-zone` Skill

@@ -95,10 +95,19 @@ Some **specific** pointers CANNOT or SHOULD NOT be annotated. Leave these as raw
   ```c
   void *tmp = (void *)ptr;  // intermediate cast, not a real allocation
   ```
-- **Stack pointers / address-of results**: `&local_var` is not heap-allocated
+- **Stack pointers inside `_Unsafe` blocks**: `&local_var` kept as raw `T *` is
+  only valid in `_Unsafe`. In `_Safe` zones, `&local_var` **is** a borrow and
+  MUST be written as `&_Const local_var` / `&_Mut local_var`, with the receiver
+  typed `const T *_Borrow` / `T *_Borrow`. See Step 4.5.
   ```c
-  int x = 42;
-  int *p = &x;  // points to stack, not owned, not a borrow in BSC sense
+  _Unsafe {
+      int x = 42;
+      int *p = &x;       // raw pointer — OK only in _Unsafe
+  }
+  _Safe void f(void) {
+      int x = 42;
+      int *_Borrow p = &_Mut x;   // NOT a raw `int *p = &x` — that's forbidden
+  }
   ```
 - **Function pointers**: not data pointers, leave as-is
 - **Pointers inside `_Unsafe` blocks**: when you explicitly opt out of safety checks
@@ -123,7 +132,9 @@ BSC provides `safe_malloc<T>(val)` and `safe_free()` from `bishengc_safety.hbs`.
 
 **When to use which:**
 - `safe_malloc<T>(val)` — use when allocating a single value of known type. Returns `T *_Owned`, initializes to `val`. No cast needed. Works in `_Safe` context.
-- `safe_free(p)` — **preferred for all frees**. Accepts `void *_Nullable _Owned`, so it works even when the pointer might be NULL. Cast argument: `safe_free((void *_Owned)p)` or `safe_free((void *_Nullable _Owned)p)` if nullable.
+- `safe_free(p)` — **preferred for all frees**. Parameter type is `void *_Nullable _Owned`. Cast based on the SOURCE pointer's type:
+  - If `p` is `T *_Owned` (non-nullable): `safe_free((void *_Owned)p)`. The `_Nullable` widening at the call is implicit.
+  - If `p` is `T *_Nullable _Owned`: `safe_free((void *_Nullable _Owned)p)`. The cast must preserve `_Nullable` — casting to non-nullable `(void *_Owned)` would narrow and error.
 - Raw `malloc` with `_Owned` cast — use when `safe_malloc` doesn't fit: variable-size allocations (`malloc(n * sizeof(T))`), `calloc`, `realloc`, `strdup`, or buffer allocations. Requires `_Unsafe` context.
 - Raw `free()` — takes `void *_Owned` (non-nullable). Use only in `_Unsafe` blocks. If the pointer might be NULL, use `safe_free` instead.
 
@@ -253,6 +264,38 @@ Node* find_node(Container *c, int id) { ... return pointer into c's data ... }
 Node *_Borrow find_node(Container *_Borrow c, int id) { ... }
 ```
 
+#### Const-correctness of getters — a translation decision with whole-codebase reach
+
+C getters `T* get(Container* c, ...)` are typically read-only. The naive
+translation is `T *_Borrow get(Container *_Borrow this, ...)` — but this is
+**NOT const**: `Container *_Borrow` is a mut-borrow. Any caller from a
+`const Container *_Borrow` context cannot call it.
+
+This is subtle because C has no borrow checker — a C read-only getter and a C
+mutating setter have identical pointer types. BSC needs you to pick at
+translation time:
+
+| Getter behavior in C | BSC signature |
+|----------------------|---------------|
+| Reads fields only; does not modify the container | `const T *_Borrow get(const Container *_Borrow this, ...)` |
+| Returns a mut-borrow into container so caller can modify | `T *_Borrow get_mut(Container *_Borrow this, ...)` |
+| Both needed | Provide **two** member functions (`get` + `get_mut`) |
+
+**Forgetting const on read-only getters is a whole-codebase annoyance.** Once
+you have even one function that needs `const Container *_Borrow`, every
+non-const getter it wants to call becomes unreachable. Callers then work around
+it by reaching through `_Public` fields directly, casting, or duplicating
+helpers — all of which defeat the API.
+
+**Checklist during translation:**
+- Audit every C function whose name starts `get_`, `find_`, `has_`, `count_`,
+  `is_`, `peek_`, or any verb describing read-only access.
+- If the function body does not modify `this` or call mutating methods on it,
+  change BOTH the `this` parameter AND the returned pointer to `const`:
+  `const T *_Borrow method(const Container *_Borrow this, ...)`.
+- If a C-style "getter" happens to lazy-initialize, sort, or cache on first
+  call, it is **not** actually read-only — leave it non-const and document why.
+
 #### Raw pointers — leave unannotated
 ```c
 // These stay as plain pointers — no _Owned or _Borrow
@@ -304,9 +347,10 @@ _Safe void init(int *_Borrow out) { *out = 0; }
 _Safe void read_val(const int *_Borrow p) { (void)*p; }
 _Safe void example(void) {
     int x = 42;
-    const int *_Borrow r = &_Const x;   // read-only → &_Const
-    init(&_Mut x);                       // writes → &_Mut
+    init(&_Mut x);                       // writes → &_Mut (no other live borrow)
     read_val(&_Const x);                 // read-only param → &_Const
+    const int *_Borrow r = &_Const x;    // read-only → &_Const
+    (void)*r;                            // use r before scope end
 }
 ```
 
@@ -380,6 +424,245 @@ Options:
 const char *literal = "hello";                              // raw pointer — string literal, never freed
 char *_Owned allocated = (char *_Owned)strdup("hello");     // heap copy — must free
 ```
+
+#### Deciding `struct` vs `_Owned struct` when porting
+
+C has only one kind of aggregate. BSC has two:
+
+- **`struct S`** — copy semantics (like a C struct). May still contain
+  `*_Owned` fields, in which case `S` is automatically a move-semantic type
+  (see `is_move_semantic<T>` in the user manual §2.3.2). No auto-destructor:
+  every `*_Owned` field must be released explicitly on every code path.
+- **`_Owned struct S`** — move semantics, whole-value tracked. May have a
+  destructor `~S(S this) { ... }` that runs automatically at scope exit.
+  Nested `_Owned struct` members are auto-destructed by the compiler; only
+  raw `*_Owned` pointer members need explicit `safe_free` in `~S`.
+
+**Promote C structs to `_Owned struct` when any of these hold:**
+
+1. The struct "owns" heap-allocated resources (fields assigned from
+   `malloc`/`calloc`/`strdup`, or `_Owned`-annotated fields).
+2. The C code has a corresponding `free_S(S* s)` / `S_destroy(S* s)` / similar
+   cleanup function that walks the struct's fields.
+3. Instances are conceptually unique and shouldn't be bit-copied.
+
+```c
+// BEFORE (C)
+typedef struct Buffer {
+    char *data;
+    size_t len;
+} Buffer;
+void buffer_free(Buffer *b) { free(b->data); }
+
+// AFTER (BSC) — promoted to _Owned struct
+_Owned struct Buffer {
+_Public:
+    char *_Owned data;
+    size_t len;
+    ~Buffer(Buffer this) {
+        safe_free((void *_Owned)this.data);
+    }
+};
+// The caller no longer calls buffer_free — the destructor fires automatically.
+```
+
+**Keep as plain `struct` (don't promote) when:**
+
+1. The struct is POD-like — only value fields, no heap pointers, no cleanup.
+2. The C code passes instances by value and expects cheap copies.
+3. You genuinely need copy semantics (e.g. `Point`, `Rect`, `Color`).
+
+```c
+// Stays a plain struct — no ownership, just a pair of numbers
+struct Point { int x; int y; };
+```
+
+**A plain `struct` with a `*_Owned` field is legal but dangerous.** The
+compiler flags it as move-semantic but generates NO auto-destructor — you
+must release the owned fields manually on every drop path. If you catch
+yourself doing that, promote to `_Owned struct`.
+
+##### Destructor ordering and "partial move" rule
+
+From the user manual §3.4.1.2: at scope end, an `_Owned struct` (recursively
+including members) must be in one of exactly two states:
+
+- **`_Owned`**: nothing moved, destructor will fire automatically.
+- **`moved`**: the whole struct was explicitly moved out as a unit.
+
+Any in-between state (e.g. one field moved, the rest live) is rejected with:
+`partially moved _Owned struct: X at scope end, Y moved`. **When porting C
+code that frees fields one at a time and then forgets the parent**, this rule
+will catch you. Fix by either moving the whole struct out or leaving it
+untouched and letting the destructor run.
+
+#### Bit-copying structs with `memcpy` / `memmove` / `memset`
+
+C routinely uses `memcpy(dst, src, sizeof(T))` to duplicate a struct. This is
+a **type-erased bit copy**: the compiler's ownership tracking does not see
+it. If `T` contains `*_Owned` or `_Owned struct` members, a raw `memcpy`
+creates two owners of the same heap memory — leading to double-free when
+both destructors fire.
+
+```c
+// UNSAFE — the _Owned pointer inside r is now aliased by val.
+// When r goes out of scope, ~Resource(r) frees r.s.
+// When the caller uses val and drops it, the same buffer is freed again.
+Resource r = { .s = safe_malloc<char>(100) };
+memcpy(val, (const void *)&r, sizeof(Resource));
+// BUG: double free pending.
+```
+
+**Sanctioned pattern (user manual §6.1.4):** pair the `memcpy` with
+`forget<T>(r)`. `forget` takes ownership of `r` and drops it on the floor
+without calling the destructor. Ownership has transferred to `val` via the
+bit copy; `r`'s destructor is correctly suppressed.
+
+```c
+#include "bishengc_safety.hbs"
+
+_Unsafe void ffi_out(char *val) {
+    Resource r = { .s = safe_malloc<char>(100) };
+    memcpy(val, (const void *)&r, sizeof(Resource));
+    forget<Resource>(r);   // suppress ~Resource; val now owns r.s
+}
+```
+
+**Rules for porting `memcpy`/`memmove` over owning types:**
+
+- If both source and destination will be live after the copy → you've
+  duplicated ownership. Use `.clone()` on the source (if available) instead
+  of `memcpy`.
+- If the source is "moved out" by the copy (FFI boundary, manual move) →
+  wrap the raw copy in `_Unsafe` and call `forget<T>(src)` immediately
+  after, so the compiler doesn't fire the source's destructor.
+- For `memset(s, 0, sizeof(T))` on a struct containing `*_Owned` fields:
+  same problem inverted — it overwrites the owned pointer with NULL without
+  freeing. Use a value-replace via assignment, or wrap in `_Unsafe` after
+  first freeing the fields by hand.
+
+Treat `mem*` on owning types as a **boundary operation**: `_Unsafe`, paired
+with an explicit ownership statement (`forget`, prior `safe_free`, or a
+matching copy).
+
+#### Circular structures: back-references, parents, graphs, observers
+
+BSC's single-owner `_Owned` model cannot directly express cycles. There are
+**two idiomatic patterns** — pick based on whether nodes are truly shared:
+
+| Situation | Pattern |
+|-----------|---------|
+| **Container uniquely owns its nodes** (typical list, tree, queue) | Raw `Node*` fields + `_Unsafe` manipulation + custom `~Container` destructor that walks and frees. No `Rc`/`Weak`. |
+| **Nodes are shared between multiple owners**, OR **back-references need to survive drop of some owners**, OR **you want automatic destruction without writing a walk-and-free destructor** | `Rc<T>` for owning refs, `Weak<T>` for back-refs, `RefCell<T>` for mutation through shared refs. Pattern from user manual §6.3. |
+
+The stdlib's own `LinkedList<T>` (libcbs `list.hbs`) uses the **first
+pattern** — raw pointers in `_Unsafe` — precisely because a list uniquely
+owns its chain. Don't reach for `Rc`/`Weak` if a custom destructor would do.
+
+##### Pattern A — raw pointers + `_Unsafe` + custom destructor
+
+Use when the container is the sole owner. `_Owned struct` wraps the root
+pointers; the destructor walks and frees nodes. Public API stays `_Safe`.
+
+```c
+typedef struct SNode SNode;
+struct SNode {
+    int           value;
+    struct SNode *next;   // raw; owned transitively by the list
+};
+
+_Owned struct SList {
+_Public:
+    struct SNode *head;
+    size_t        count;
+
+    ~SList(SList this) {
+        _Unsafe {
+            struct SNode *n = this.head;
+            while (n != NULL) {
+                struct SNode *nxt = n->next;
+                free((void *)n);
+                n = nxt;
+            }
+        }
+    }
+};
+// push/pop/etc: _Safe bodies with tiny _Unsafe blocks around the malloc/free.
+```
+
+Forward-declare with `typedef struct X X;` — BSC requires the `struct`
+tag on raw references unless a typedef exists.
+
+##### Pattern B — `Rc<T>` / `Weak<T>` / `RefCell<T>`
+
+Use when nodes are shared, or when back-refs must remain usable after some
+owners drop. The manual's §6.3.6.4 tree example is the canonical case.
+
+```c
+// CORRECT: RefCell<Option<Weak<Node>>> — the Option::None state is how
+// you construct a node BEFORE any parent exists. Weak<T>::new requires an
+// existing Rc<T> to borrow, so there is no "default Weak" — Option fills
+// that gap.
+_Owned struct Node {
+_Public:
+    int value;
+    RefCell<Option<Weak<Node>>>    parent;    // back-ref; None until wired
+    RefCell<Vec<Rc<Node>>>         children;  // owning forward refs
+};
+
+_Safe Node Node::new(int v) {
+    Node n = {
+        .value    = v,
+        .parent   = RefCell<Option<Weak<Node>>>::new(Option<Weak<Node>>::None()),
+        .children = RefCell<Vec<Rc<Node>>>::new(Vec<Rc<Node>>::new()),
+    };
+    return n;
+}
+
+// Wiring: parent owns children via Rc::clone, children back-ref via Weak.
+Rc<Node> root = Rc<Node>::new(Node::new(10));
+Rc<Node> leaf = Rc<Node>::new(Node::new(5));
+root.deref()->children.borrow_mut().deref()->push(leaf.clone());
+*leaf.deref()->parent.borrow_mut().deref() =
+    Option<Weak<Node>>::Some(Weak<Node>::new(&_Const root));
+```
+
+**Why `Option<Weak<T>>` and not just `Weak<T>`:** `Weak<T>::new(const Rc<T>*)`
+is the ONLY constructor — there is no `Weak::none()` / default. To create a
+`Node` before its parent exists (required by the leaf-first construction
+order), the `parent` field must start in a legitimately-empty state. `Option`
+provides that. The user manual's example elides the `parent` initializer
+entirely, which would leave it in an indeterminate state — don't copy that.
+
+**Why both `Rc` and `Weak`:** `Rc<T>` alone creates an immortal cycle
+(every node's refcount stays ≥1 because its neighbor refs it). `Weak<T>`
+doesn't contribute to the refcount, so when the owning chain drops its
+last `Rc`, destructors fire normally. User manual §6.3.6 shows the leak
+without `Weak` and its resolution with it.
+
+**Why `RefCell`:** BSC's borrow checker forbids mutating through a
+`const T *_Borrow` (which is what `Rc::deref` returns). If your cyclic
+structure needs mutation (adding children, rewiring edges), wrap the
+mutable-from-shared fields in `RefCell`. `borrow_mut()` gives a `RefMut<T>`
+whose `deref()` is `T *_Borrow`. Violations abort at **runtime**, not compile
+time.
+
+##### Translation table
+
+| C pattern | Recommended BSC translation |
+|-----------|-----------------------------|
+| Singly- or doubly-linked list whose list struct is the sole owner | Pattern A (raw + `_Unsafe` + custom destructor). Model on stdlib `LinkedList<T>`. |
+| Tree walked from a single root, no back-references | Plain `_Owned struct` with `Vec<Node>` children. Recursion handles traversal; auto-destructors handle cleanup. No `Rc` needed. |
+| Tree with parent back-references (caller walks leaf→root sometimes) | Pattern B with `RefCell<Option<Weak<Node>>>` parent, `RefCell<Vec<Rc<Node>>>` children. |
+| Graph where a node may be reachable from multiple predecessors | Pattern B: edges own targets via `Rc<Node>`; if edges should be non-owning views, use `Weak<Node>` and upgrade on access. |
+| Observer / listener pattern | Subject → observers via `Vec<Weak<Observer>>`; observer → subject via `RefCell<Option<Weak<Subject>>>`. |
+
+**When NOT to reach for `Rc`/`Weak`:** if the container uniquely owns its
+nodes and nobody else references them, use Pattern A. It's shorter, cheaper,
+and proven — the stdlib follows it. Rc+Weak overhead only pays off when
+sharing or leaf-up traversal is genuinely required.
+
+See `bsc-stdlib-advanced` Skill for the full `Rc`/`Weak`/`RefCell`/`Cell` API.
 
 #### Function pointer hooks (custom allocators)
 If the C code uses function pointer hooks for memory allocation (e.g. a configurable `allocate`/`deallocate` struct), you MUST replace them with direct `malloc`/`free`/`realloc` calls. This is required because:
@@ -459,9 +742,10 @@ while (length) {
 }
 ```
 
-Real bug from parson port: `is_decimal` silently rejected every number because on the
-first iteration it accessed position `length` (the null terminator), and `strchr("xX", '\0')`
-returns non-NULL (finds the trailing `\0` of the needle string).
+Real bug seen in the wild: a numeric-parser predicate silently rejected every
+input because on the first iteration it accessed position `length` (the null
+terminator). `strchr("xX", '\0')` then returned non-NULL — `strchr` finds the
+trailing `\0` of the *needle* string — so the guard fired on every call.
 
 #### Pointer-based offsets vs. index-based offsets
 
@@ -480,8 +764,10 @@ strncmp((const char*)string->as_str(), "-0", 2)
 strncmp((const char*)string->get(cur_index), "-0", 2)
 ```
 
-Also a real parson bug — `is_decimal` compared `-0` against the beginning of the input
-instead of the number's start.
+Real bug seen in the wild: a numeric-parser predicate compared `"-0"` against
+the beginning of the whole input buffer instead of against the number's start
+offset. The C code had the offset built into `p`; the BSC port lost it when
+`p` became a `String` reference.
 
 #### `sizeof(expr) - 1` for string literals
 
@@ -495,6 +781,105 @@ the pointer size, not the string length. Audit every `sizeof`-on-a-string.
 your C code relied on reading past the known length (common in fast lexers), you now
 get an OOB panic. Use `string->at(i)` inside an explicit bound or use the raw buffer
 via `as_str()` + `_Unsafe`.
+
+#### Don't drop the default-emit branch when porting a write-through-cursor loop
+
+Many C routines — serializers, encoders, lexers, formatters — use a moving
+cursor to emit bytes:
+
+```c
+// C pattern
+for (i = 0; i < len; i++) {
+    c = input[i];
+    switch (c) {
+        case '\n': *buf++ = '\\'; *buf++ = 'n'; break;
+        case '\t': *buf++ = '\\'; *buf++ = 't'; break;
+        /* ...other escape cases... */
+        default:   *buf++ = c;          /* <-- THE IMPORTANT BRANCH */
+    }
+}
+```
+
+When you refactor `buf` away and switch to an output builder (e.g.
+`out->push(c)`), the instinct is to port each `case` and move on. Easy to
+forget the `default` branch — the code still compiles, still runs, but
+silently drops every byte that didn't match a case:
+
+```c
+// WRONG port — default branch lost
+for (size_t i = 0; i < len; i++) {
+    char c = input->at(i);
+    switch (c) {
+        case '\n': out->push('\\'); out->push('n'); break;
+        case '\t': out->push('\\'); out->push('t'); break;
+        default:   break;                /* BUG: emits nothing */
+    }
+}
+
+// CORRECT port — default mirrors the C cursor write
+for (size_t i = 0; i < len; i++) {
+    char c = input->at(i);
+    switch (c) {
+        case '\n': out->push('\\'); out->push('n'); break;
+        case '\t': out->push('\\'); out->push('t'); break;
+        default:   out->push(c);         /* emit the byte as-is */
+    }
+}
+```
+
+**Rule:** for every C `case`/`default` that writes to the output via the old
+cursor idiom (`*buf++ = ...`), write an equivalent `out->push(...)` (or the
+BSC equivalent in your output type) in the port. Diff the two side-by-side
+before concluding the port is done.
+
+**How to notice this bug:** output length is much shorter than expected, or
+tests that compare against a known-good output fail with "prefix matches,
+middle is missing".
+
+#### Porting C iterator loops that advance a `const char *`
+
+C iterates C strings via pointer advance:
+
+```c
+// C pattern
+const char *p = input;
+while (*p != '\0') {
+    emit(*p);
+    p++;
+}
+```
+
+You cannot port this directly to a `const char *_Borrow` in `_Safe`:
+`_Borrow` pointers forbid indexing `p[i]` and arithmetic `p + n` / `p++`
+(see `bsc-borrowing` §5 and §8). Three legitimate ports:
+
+1. **Index + base pointer borrow** — keep the raw base, loop on an index,
+   one tight `_Unsafe` block for the deref:
+   ```c
+   const char *base = input;   // raw, not _Borrow
+   size_t i = 0;
+   _Unsafe {
+       while (base[i] != '\0') { emit(base[i]); i++; }
+   }
+   ```
+
+2. **Convert to a `String`-typed input** — the idiomatic rewrite, using
+   bounds-checked indexing:
+   ```c
+   for (size_t i = 0; i < input->length(); i += 1) {
+       char c = input->at(i);
+       if (c == '\0') break;
+       emit(c);
+   }
+   ```
+
+3. **Fixed-literal helpers** — if the "string" being iterated is a small
+   set of compile-time constants (e.g. "null"/"true"/"false" tokens), don't
+   iterate at all. Write one helper per literal that push-emits the bytes
+   straight to the output. Zero `_Unsafe`, zero allocation, no loop.
+
+Pick based on where the bytes come from: user input → #2; known literal → #3;
+raw interop buffer → #1.
 
 ### Step 7: Compile and Fix
 
@@ -546,12 +931,16 @@ cJSON *_Owned result = cJSON_CreateObject();
 
 ### Error 4: Returning raw pointer from function declared `_Owned` return
 ```c
-// WRONG — returning raw pointer as _Owned
+// WRONG — raw `item` cannot be returned as _Owned
 cJSON *_Owned detach_item(cJSON *parent) {
-    cJSON *item = parent->child;  // raw pointer from struct field
-    return item;  // ERROR: raw → _Owned conversion
-
-// FIX — wrap in _Unsafe for boundary conversion
+    cJSON *item = parent->child;   // raw pointer from struct field
+    return item;                    // ERROR: raw → _Owned conversion
+}
+```
+```c
+// FIX — wrap the boundary conversion in _Unsafe
+cJSON *_Owned detach_item(cJSON *parent) {
+    cJSON *item = parent->child;
     _Unsafe { return (cJSON *_Owned)item; }
 }
 ```
@@ -569,16 +958,29 @@ cJSON *_Owned _Nullable item = nullptr;
 ```c
 // WRONG — after AddItemToObject, item is moved, caller cannot use it
 cJSON *_Owned item = cJSON_CreateObject();
-cJSON_AddItemToObject(root, "key", item);  // item ownership moved
-cJSON_AddStringToObject(item, "name", "val");  // ERROR: use after move
-
-// FIX — get a raw reference before transferring ownership
-cJSON *_Owned item = cJSON_CreateObject();
-cJSON *ref = item;  // raw alias (borrow)
-cJSON_AddItemToObject(root, "key", item);  // item moved
-// Use ref (raw pointer) for further modifications — ref is still valid
-cJSON_AddStringToObject(ref, "name", "val");  // OK: using raw ref
+cJSON_AddItemToObject(root, "key", item);     // item ownership moved
+cJSON_AddStringToObject(item, "name", "val"); // ERROR: use after move
 ```
+
+**FIX Option A — populate BEFORE transferring ownership** (preferred: no aliasing needed):
+```c
+cJSON *_Owned item = cJSON_CreateObject();
+cJSON_AddStringToObject(&_Mut *item, "name", "val"); // mutate while still owned
+cJSON_AddItemToObject(root, "key", item);             // transfer last
+```
+
+**FIX Option B — re-borrow from the container after transfer** (when mutation
+must happen after `root` sees the item):
+```c
+cJSON *_Owned item = cJSON_CreateObject();
+cJSON_AddItemToObject(root, "key", item);             // item moved
+cJSON *_Borrow ref = cJSON_GetObjectItem(root, "key"); // look it up from root
+cJSON_AddStringToObject(ref, "name", "val");           // mutate via borrow
+```
+
+**DO NOT** save a `cJSON *` raw pointer "alias" of `item` and use it after the
+move. In BSC, raw-from-`_Owned` aliasing is a type error in `_Safe` and a
+use-after-move hazard in `_Unsafe`. Pick Option A or B.
 
 ## Checklist — Verify Before Done
 
@@ -596,6 +998,12 @@ cJSON_AddStringToObject(ref, "name", "val");  // OK: using raw ref
 - [ ] **Every free()** converted to `safe_free((void *_Owned)p)` or `safe_free((void *_Nullable _Owned)p)`
 - [ ] **Function parameters** annotated where ownership is clear
 - [ ] **Function returns** annotated where ownership is clear
+- [ ] **Read-only getters are `const`**: functions named `get_`/`find_`/`has_`/`count_`/`is_`/`peek_` that don't mutate take `const T *_Borrow this` AND return `const ...*_Borrow` — otherwise callers from `const` contexts can't reach them
+- [ ] **Default-emit branch preserved**: every C `*buf++ = c` in a switch/default was ported to the equivalent `out->push(c)` in BSC (silently-dropped bytes are a classic port bug)
+- [ ] **Pointer-advance loops over `const char *`**: ported as index + base-pointer in one `_Unsafe`, OR rewritten to `String::at(i)` with a length bound, OR replaced with per-literal helpers when the source is a compile-time constant
+- [ ] **Struct promotion decided**: every C struct with heap-owning fields or a matching `*_free` function was promoted to `_Owned struct` with a destructor; pure-value structs stay plain `struct`
+- [ ] **No raw `mem*` on owning types**: every `memcpy`/`memmove`/`memset` over a struct containing `*_Owned` or `_Owned struct` members is wrapped in `_Unsafe` and paired with `forget<T>(src)` (ownership transferred) or prior `safe_free` of the fields (pre-overwrite)
+- [ ] **Cycles and shared ownership decided deliberately**: single-owner lists/trees use Pattern A (raw pointers + `_Unsafe` + custom destructor, like stdlib `LinkedList<T>`). Only reach for Pattern B (`Rc`+`Weak`+`RefCell`) when nodes are genuinely shared or leaf-up traversal is needed. `Weak<T>` fields are typed `Option<Weak<T>>` because `Weak::new` requires an existing `Rc`.
 - [ ] **Conditional ownership** patterns handled with `_Unsafe` or restructuring
 - [ ] **`_Owned` + NULL**: Every `_Owned` pointer that can be NULL uses `_Nullable` and `nullptr`
 - [ ] **No use-after-move**: After passing `_Owned` to a consuming function, only use raw aliases
