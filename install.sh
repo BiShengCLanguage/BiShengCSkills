@@ -19,7 +19,7 @@
 #   bash install.sh --list                   # list available skills
 #
 # Supported tools:
-#   claude    — Claude Code CLI / VSCode extension (.claude/commands/)
+#   claude    — Claude Code CLI / VSCode extension (.claude/skills/)
 #   cursor    — Cursor IDE (.cursorrules)
 #   windsurf  — Windsurf IDE (.windsurfrules)
 #   opencode  — OpenCode (.opencode/skills/)
@@ -182,8 +182,8 @@ strip_frontmatter() {
 
 # --- Install: Claude Code ---
 install_claude() {
-    local cmd_dir="$TARGET/.claude/commands"
-    mkdir -p "$cmd_dir"
+    local skills_dst="$TARGET/.claude/skills"
+    mkdir -p "$skills_dst"
     local count=0
 
     for skill_dir in "$SKILLS_DIR"/*/; do
@@ -191,11 +191,8 @@ install_claude() {
         src="$skill_dir/SKILL.md"
         [ -f "$src" ] || continue
 
-        desc=$(get_desc "$src")
-        body=$(strip_frontmatter "$src")
-
-        # Claude Code format: first line = description, $ARGUMENTS, then content
-        printf '%s\n\n$ARGUMENTS\n\n%s\n' "$desc" "$body" > "$cmd_dir/$name.md"
+        mkdir -p "$skills_dst/$name"
+        cp "$src" "$skills_dst/$name/SKILL.md"
         count=$((count + 1))
     done
 
@@ -203,6 +200,69 @@ install_claude() {
     local claude_md="$TARGET/CLAUDE.md"
     if [ ! -f "$claude_md" ] || ! grep -q "BiSheng C" "$claude_md" 2>/dev/null; then
         cat >> "$claude_md" << 'CLAUDE_EOF'
+
+# Working Principles
+
+## 1. Think Before Coding
+
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+Before implementing:
+
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+Minimum code that solves the problem. Nothing speculative.
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it — don't delete it.
+
+When your changes create orphans:
+
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+Define success criteria. Loop until verified.
+
+Transform tasks into verifiable goals:
+
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
 
 # BiSheng C (BSC) — MUST READ before writing any .cbs code
 
@@ -215,15 +275,14 @@ Grammar: `base_type *qualifier variable_name`
 Think of it like `const`: you write `int *const p`, not `const int* p` for a const pointer.
 Same rule: `int *_Owned p`, not `_Owned int* p`.
 
-### Correct Examples
+### Correct
 
 ```c
-char *_Owned msg = (char *_Owned)malloc(14);      // owned pointer to char
-int *_Owned p = (int *_Owned)malloc(sizeof(int));  // owned pointer to int
-const int *_Borrow r = &_Const x;                  // immutable borrow
-int *_Borrow mr = &_Mut y;                         // mutable borrow
-void *_Owned vp = (void *_Owned)malloc(n);         // owned void pointer
-free((void *_Owned)p);                             // free requires cast
+char *_Owned msg = (char *_Owned)malloc(14);
+int *_Owned p = (int *_Owned)malloc(sizeof(int));
+const int *_Borrow r = &_Const x;
+int *_Borrow mr = &_Mut y;
+free((void *_Owned)p);
 ```
 
 ### Wrong — causes compilation error: "unknown type name '_Owned'"
@@ -231,109 +290,35 @@ free((void *_Owned)p);                             // free requires cast
 ```c
 _Owned char* msg = malloc(14);     // WRONG — _Owned is not a type
 _Borrow int* r = &_Const x;       // WRONG — _Borrow is not a type
-_Owned int *p = malloc(4);        // WRONG — qualifier before type
 ```
 
-## Self-Check (do this before returning BSC code)
-
-Scan every pointer declaration in your output. If you wrote `_Owned T*` or `_Borrow T*`,
-STOP and rewrite: move the qualifier to after `*`. The pattern is ALWAYS `T *_Owned`.
+**Self-check before returning BSC code**: if you wrote `_Owned T*` or `_Borrow T*`,
+rewrite to `T *_Owned`. The pattern is ALWAYS `T *_Owned`.
 
 ## Quick Reference
 
-- Files: `.cbs` (source), `.hbs` (header)
-- Compile: `clang file.cbs -o output`
-- `#include "bishengc_safety.hbs"` for safe allocation APIs
-- **Prefer `safe_malloc<T>(val)`** — returns `T *_Owned` directly, no cast needed
-- **Prefer `safe_free((void *_Owned)p)`** — frees an owned pointer
+- Files: `.cbs` (source), `.hbs` (header). Compile: `clang file.cbs -o output`
+- `#include "bishengc_safety.hbs"` for safe APIs
+- Prefer `safe_malloc<T>(val)` (returns `T *_Owned`, no cast) and `safe_free((void *_Owned)p)`
 - Raw `malloc`/`free` require `_Unsafe` context and `(T *_Owned)` cast
 
-## Before Planning Any Non-Trivial BSC Change
+## LSP — Use Proactively
 
-You MUST load `/bsc-design` BEFORE writing a plan or implementation that involves any of:
+BSC-aware clangd exposes ownership flow and live ranges. Before non-trivial changes to
+`_Owned`/`_Borrow` code, `hover` on the variable to see where it was moved, borrowed, or
+freed — don't guess from local context. For the full reference (availability probe,
+known clangd limitations, fallback-to-Grep rules), load `/bsc-lsp`.
 
-- Adding a new function with `_Owned` or `_Borrow` parameters
-- Designing a new struct, especially `_Owned struct`
-- Choosing where the `_Safe` / `_Unsafe` boundary goes
-- Returning a value vs `*_Owned` pointer at an API edge
-- Member-function vs free-function organization
-- Replacing a C union, designing destructors, or any refactor that changes ownership flow
-- Any change that touches more than one function's ownership timeline
+## When to Load Other Skills
 
-Skip only for: typo fixes, comment edits, single-line bug fixes that don't change types or
-signatures, or pure documentation changes.
-
-The skill provides 7 rules of thumb plus worked examples. Consulting it once at PLANNING
-time is much cheaper than rewriting a plan after the borrow checker rejects it.
-
-## C-to-BSC Translation
-
-If you are translating/porting C code to BSC, you MUST load the `/c-to-bsc` skill BEFORE starting.
-Changing file extensions alone is NOT a translation — every pointer must be analyzed and annotated with `_Owned`, `_Borrow`, or left raw where appropriate. Every `malloc` should become `safe_malloc` where possible.
-
-## LSP Tool — BSC Code Intelligence
-
-The LSP tool (`hover`, `findReferences`, `goToDefinition`, `goToImplementation`, `documentSymbol`, `workspaceSymbol`, `prepareCallHierarchy`, `incomingCalls`, `outgoingCalls`) is BSC-aware when clangd is running and configured for `.cbs`/`.hbs`.
-
-### IMPORTANT: Check LSP availability first
-
-Before relying on LSP, probe with one call (e.g. `hover` on a known symbol). If it returns
-`No LSP server available for file type: .cbs`, the BSC-aware LSP is NOT registered in this
-environment. Fall back to manual analysis (Read + Grep) and tell the user.
-
-### Use LSP proactively when reasoning about ownership
-
-When you're about to make a non-trivial change to BSC code involving `_Owned` or `_Borrow`
-pointers, USE LSP FIRST instead of guessing from local context. Specifically:
-
-1. **Before adding/removing a function call that takes an `_Owned` argument**:
-   `hover` on the variable to see if it's been moved already.
-2. **Before introducing a new borrow** (`&_Const x` or `&_Mut x`):
-   `hover` on `x` to see existing borrowers — overlapping mutable borrows = compile error.
-3. **When a borrow-checker error mentions a variable**:
-   `hover` on that variable's declaration. The Ownership Flow tells you exactly where it
-   was moved/borrowed/freed.
-
-### hover on `_Owned` / `_Borrow` pointer variables
-
-Returns the variable's full ownership lifecycle within its function:
-
-- **Ownership Flow** — chronological events with line numbers and code snippets:
-  `Declared`, `Moved in from x`, `Moved out to y`, `Moved into foo()`, `Copied in`,
-  `Mut borrow of x`, `Immut borrow of x`, `Mut reborrow of x`, `Init null`, `Freed`, `Dropped`
-- **Live range** — first to last event line
-
-Example output:
-```
-Ownership Flow:
-line 10: Declared
-  int *_Owned p = safe_malloc(42);
-line 18: Moved into consume()
-  consume(p);
-Live range: lines 10-18
-```
-
-### Known limitations — when to fall back to Grep
-
-clangd does not fully understand BSC's member-function call syntax (`obj->method(...)`
-resolved against `T::method`). This affects:
-
-- **findReferences** on a member function often returns only the declaration site,
-  missing call sites. Always cross-check with `Grep` before renaming/deleting a symbol.
-- **incomingCalls** may report "no incoming calls" for a function clearly called via
-  `obj->method()`. Use `Grep` for call-site discovery.
-
-### Net rule of thumb
-
-- Use **LSP** for ownership/type questions about a specific variable in a specific function.
-- Use **Grep** for cross-file discovery and call-site enumeration.
-- They are complements, not substitutes.
+- Non-trivial BSC change (new struct, new `_Owned`/`_Borrow` signature, refactor crossing ownership timelines, `_Safe`/`_Unsafe` boundary decision) → load `/bsc-design` BEFORE planning.
+- Translating/porting C to BSC → load `/c-to-bsc` BEFORE starting. Changing file extensions alone is NOT a translation.
 CLAUDE_EOF
     fi
 
-    echo "  Claude Code: installed $count commands to .claude/commands/"
+    echo "  Claude Code: installed $count skills to .claude/skills/"
     echo "  Claude Code: added BSC syntax rules to CLAUDE.md"
-    echo "    Usage: /bsc-overview, /bsc-trait, /bsc-ownership, etc."
+    echo "    Skills auto-invoke on relevant context; also invokable as /bsc-overview, /bsc-design, etc."
 }
 
 # --- Install: Cursor ---
@@ -389,12 +374,19 @@ if [ "$ACTION" = "uninstall" ]; then
     echo "Removing BiSheng C Skills from $TARGET..."
 
     # Claude Code
+    if [ -d "$TARGET/.claude/skills" ]; then
+        for skill_dir in "$SKILLS_DIR"/*/; do
+            name="$(basename "$skill_dir")"
+            rm -rf "$TARGET/.claude/skills/$name"
+        done
+        echo "  Removed Claude Code skills"
+    fi
+    # Legacy path: older installs wrote to .claude/commands/
     if [ -d "$TARGET/.claude/commands" ]; then
         for skill_dir in "$SKILLS_DIR"/*/; do
             name="$(basename "$skill_dir")"
             rm -f "$TARGET/.claude/commands/$name.md"
         done
-        echo "  Removed Claude Code commands"
     fi
 
     # OpenCode
