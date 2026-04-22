@@ -11,7 +11,7 @@ porting existing C.
 
 ## 1. Rules of Thumb (read this first)
 
-Seven rules to consult when designing any BSC API. If you only remember one thing,
+Eight rules to consult when designing any BSC API. If you only remember one thing,
 remember **Rule 2**.
 
 ### Rule 1 — Return values, borrow arguments
@@ -154,13 +154,48 @@ Every BSC library has at least one `_Unsafe` seam. Place it at the **boundary** 
 BSC's model doesn't match reality:
 
 - **FFI / system calls** (`fopen`, `read`, pointer arithmetic on buffers)
-- **Lookup returning null** (hash-map misses can't be `_Safe` — a null `_Borrow` is
-  unsound, so either return `_Unsafe T*` or wrap in `Option<T>`)
 - **Interior mutability / shared references** (reference-counted containers like
   `Rc<T>` expose `_Unsafe` peek methods)
 - **Performance-critical hot paths** (where the checker would force unnecessary clones)
 
+Lookups that may miss are **not** a seam — return `T *_Borrow _Nullable` (compile-time
+nullability tracking keeps the call site `_Safe`). See Rule 8.
+
 Never put the seam in the middle of business logic.
+
+### Rule 8 — Prefer `_Nonnull`; reach for `_Nullable` only when "absent" is real
+
+`_Owned` and `_Borrow` default to `_Nonnull`. Keep them that way unless the API genuinely
+has a no-result/optional/absent case to represent. `_Nullable` forces every use site to
+null-check before deref — choosing it when the pointer is never actually null just adds
+caller burden for no benefit.
+
+**Keep default `_Nonnull`** when:
+- The parameter is required (no "absent input" case)
+- The return is always produced when the function returns successfully
+- The struct field is always populated after construction
+
+**Reach for `_Nullable`** when:
+- Allocation may fail and you surface that: `T *_Owned _Nullable try_alloc(size_t)`
+- Cleanup paths hold a pointer that may not have been set: `Node *_Owned _Nullable item = nullptr;`
+- A struct field is legitimately optional
+- A setter accepts "clear" as a valid input: `void set_cache(Cache *_Owned _Nullable c)`
+
+```c
+// GOOD — Nonnull by default; caller doesn't null-check
+_Safe void render(const Canvas *_Borrow c, const Frame *_Borrow f);
+
+// GOOD — allocation may fail, nullable surfaces it
+_Safe Buffer *_Owned _Nullable try_create_buffer(size_t n);
+
+// BAD — declared _Nullable out of caution; callers null-check for no reason
+_Safe void render(const Canvas *_Borrow _Nullable c, const Frame *_Borrow _Nullable f);
+```
+
+Changing a pointer's nullability (Nonnull ↔ Nullable) on an existing API is a **breaking
+change** — every caller's null-check assumption shifts. Decide at design time, not patch time.
+
+> For compile-time nullability tracking mechanics and null-check patterns, see `bsc-nullability` Skill.
 
 ---
 
@@ -351,7 +386,6 @@ Internal impl (.cbs)
   └── _Unsafe blocks (NOT whole functions) for:
         - pointer arithmetic
         - aliasing that the checker over-rejects
-        - lookup-returns-null patterns
 ```
 
 ### When to use `_Unsafe` blocks inside `_Safe` functions
@@ -361,7 +395,6 @@ Totally legitimate when:
 - You need `printf`/`puts` (formatted output is considered unsafe in BSC)
 - You're doing pointer arithmetic over a known-safe buffer (`string->get(i)` returning a raw char pointer)
 - You're casting between `_Owned` and raw for `__take_from_raw` / `__move_to_raw` (C FFI)
-- A lookup can legitimately return null and you're handling that manually
 
 Not legitimate for:
 
@@ -386,7 +419,8 @@ borrows compose; design stays modular.
 Symptom: a lookup returns `T*` (raw) instead of `T *_Borrow`, forcing callers into
 `_Unsafe` just to use it.
 Fix: if the function always succeeds, return `T *_Borrow`. If it can fail, return
-`Option<T *_Borrow>` or document the null case and keep the function `_Unsafe`.
+`T *_Borrow _Nullable` — compile-time nullability tracking keeps callers `_Safe` while
+representing the miss case.
 
 ### Anti-pattern: destructor that does too much
 Symptom: destructor reaches into unrelated subsystems, calls logging, modifies global state.

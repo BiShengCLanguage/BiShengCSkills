@@ -54,6 +54,7 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$SCRIPT_DIR/skills"
+AGENTS_DIR="$SCRIPT_DIR/agents"
 ERRORS_DIR="$SCRIPT_DIR/errors"
 ADAPTER="all"
 TARGET="."
@@ -196,6 +197,19 @@ install_claude() {
         count=$((count + 1))
     done
 
+    # Agents (read-only planning helpers; subagents don't inherit skills, so
+    # their BSC knowledge is embedded in the agent file itself).
+    local agents_dst="$TARGET/.claude/agents"
+    local agent_count=0
+    if [ -d "$AGENTS_DIR" ]; then
+        mkdir -p "$agents_dst"
+        for agent_file in "$AGENTS_DIR"/*.md; do
+            [ -f "$agent_file" ] || continue
+            cp "$agent_file" "$agents_dst/"
+            agent_count=$((agent_count + 1))
+        done
+    fi
+
     # Install CLAUDE.md with syntax rules (always-loaded context)
     local claude_md="$TARGET/CLAUDE.md"
     if [ ! -f "$claude_md" ] || ! grep -q "BiSheng C" "$claude_md" 2>/dev/null; then
@@ -313,10 +327,17 @@ known clangd limitations, fallback-to-Grep rules), load `/bsc-lsp`.
 
 - Non-trivial BSC change (new struct, new `_Owned`/`_Borrow` signature, refactor crossing ownership timelines, `_Safe`/`_Unsafe` boundary decision) → load `/bsc-design` BEFORE planning.
 - Translating/porting C to BSC → load `/c-to-bsc` BEFORE starting. Changing file extensions alone is NOT a translation.
+
+## When to Delegate to the `bsc-planner` Agent
+
+Use the `bsc-planner` subagent (via the Agent tool) when planning a non-trivial BSC change that requires reading many `.cbs` files to understand ownership flow — refactors, new APIs, cross-module impact analysis, anything that would burn main context. The agent is read-only and returns a plan; the main thread implements. Do NOT delegate for single-file edits, typo fixes, or borrow-checker errors on a known function — handle those directly.
 CLAUDE_EOF
     fi
 
     echo "  Claude Code: installed $count skills to .claude/skills/"
+    if [ "$agent_count" -gt 0 ]; then
+        echo "  Claude Code: installed $agent_count agents to .claude/agents/"
+    fi
     echo "  Claude Code: added BSC syntax rules to CLAUDE.md"
     echo "    Skills auto-invoke on relevant context; also invokable as /bsc-overview, /bsc-design, etc."
 }
@@ -380,6 +401,13 @@ if [ "$ACTION" = "uninstall" ]; then
             rm -rf "$TARGET/.claude/skills/$name"
         done
         echo "  Removed Claude Code skills"
+    fi
+    if [ -d "$TARGET/.claude/agents" ] && [ -d "$AGENTS_DIR" ]; then
+        for agent_file in "$AGENTS_DIR"/*.md; do
+            [ -f "$agent_file" ] || continue
+            rm -f "$TARGET/.claude/agents/$(basename "$agent_file")"
+        done
+        echo "  Removed Claude Code agents"
     fi
     # Legacy path: older installs wrote to .claude/commands/
     if [ -d "$TARGET/.claude/commands" ]; then
