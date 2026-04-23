@@ -664,6 +664,106 @@ sharing or leaf-up traversal is genuinely required.
 
 See `bsc-stdlib-advanced` Skill for the full `Rc`/`Weak`/`RefCell`/`Cell` API.
 
+#### C Object-Oriented patterns (vtable / METHOD macro)
+
+Many C codebases implement OO-style polymorphism through structs of function pointers
+("vtables"). A typical pattern (used by strongSwan's `METHOD` macro and similar helpers):
+
+```c
+/* C original */
+typedef struct public_t public_t;
+struct public_t { void (*write)(public_t *this, uint8_t v); };
+
+typedef struct { public_t public; uint8_t *buf; size_t used; } private_t;
+
+METHOD(public_t, write, void, private_t *this, uint8_t v)
+{
+    this->buf[this->used++] = v;
+}
+// Expands to: a body taking private_t*, plus a raw fn-ptr alias _write for the vtable.
+```
+
+**Why `METHOD` (and any `transparent_union` approach) cannot be ported to BSC:**
+
+1. BSC mixed-mode declarations (`_Safe` overload of an `_Unsafe` function) require the
+   parameter list to be the same types, only adding `_Owned`/`_Borrow` qualifiers to raw
+   pointer params. `transparent_union` gives a *union* as the first parameter — not a raw
+   pointer — so mixed-mode cannot apply.
+
+2. **Function pointer casts across different struct pointer param types are forbidden in
+   heterogeneous `_Safe`/`_Unsafe` declarations (the mixed-mode mechanism).** Use the
+   body+trampoline pattern regardless — the trampoline gives you correctly-typed parameters
+   without any fn-ptr cast.
+
+**The hand-written body + trampoline pattern:**
+
+Write two `_Safe` functions per vtable slot:
+
+- **Body** — takes `private_t *_Borrow _Nonnull this`, holds all the logic.
+- **Trampoline** — takes `public_t *_Borrow _Nonnull self` (matches the vtable slot type),
+  casts to `private_t *_Borrow` via the void-borrow two-step, then calls the body.
+
+```c
+/* Body — _Safe, operates on private_t */
+_Safe static void write_uint8(private_t *_Borrow _Nonnull this, uint8_t value)
+{
+    _Unsafe this->buf[this->used] = value;   // raw field subscript
+    this->used += 1;
+}
+
+/* Trampoline — _Safe, parameter type matches vtable slot */
+_Safe static void _write_uint8(public_t *_Borrow _Nonnull self, uint8_t value)
+{
+    private_t *_Borrow _Nonnull this = _Unsafe(
+        (private_t *_Borrow _Nonnull)(void *_Borrow _Nonnull)self);
+    write_uint8(this, value);
+}
+```
+
+The cast chain `(private_t *_Borrow _Nonnull)(void *_Borrow _Nonnull)self`:
+- `public_t *_Borrow → void *_Borrow` — implicit, allowed in `_Safe`.
+- `void *_Borrow → private_t *_Borrow` — explicit cast, wrapped in `_Unsafe(expr)`.
+- Direct `public_t *_Borrow → private_t *_Borrow` is **forbidden** (different pointed-to types).
+
+**Vtable initialisation** assigns trampolines (whose param types match the vtable slot),
+never bodies:
+
+```c
+public_t *_Owned _Nullable create(void)
+{
+    private_t *this;
+    INIT(this,
+        .public = {
+            .write_uint8 = _write_uint8,   // trampoline — NOT write_uint8
+            .destroy     = _destroy,
+        },
+    );
+    return __take_from_raw(&this->public);
+}
+```
+
+**Destroy body caveat.** `this` is a `_Borrow`, so BSC does not model freeing it — wrap
+all frees in `_Unsafe`:
+
+```c
+_Safe static void destroy(private_t *_Borrow _Nonnull this)
+{
+    _Unsafe {
+        free(this->buf);
+        free((void *)(void *_Borrow _Nonnull)this);   // two-step to strip _Borrow
+    }
+}
+```
+
+**Checklist for porting a C vtable struct:**
+- [ ] Do NOT use `METHOD` macro or `transparent_union` tricks
+- [ ] Write one `_Safe` body per slot — takes `private_t *_Borrow _Nonnull`
+- [ ] Write one `_Safe` trampoline per slot — takes `public_t *_Borrow _Nonnull`
+- [ ] Cast inside trampoline: `_Unsafe((private_t *_Borrow _Nonnull)(void *_Borrow _Nonnull)self)`
+- [ ] Assign trampolines (not bodies) in the vtable initializer
+- [ ] Wrap all raw-field indexing in body functions with `_Unsafe` statement/block/expression
+- [ ] In destroy body, free all raw buffer fields first, then the struct pointer, all in `_Unsafe`
+
 #### Function pointer hooks (custom allocators)
 If the C code uses function pointer hooks for memory allocation (e.g. a configurable `allocate`/`deallocate` struct), you MUST replace them with direct `malloc`/`free`/`realloc` calls. This is required because:
 - BSC ownership annotations need to know the actual allocator — function pointer indirection hides this

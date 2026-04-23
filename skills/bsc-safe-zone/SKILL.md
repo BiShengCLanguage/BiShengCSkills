@@ -41,6 +41,29 @@ In `_Safe` zones:
 - **No casts between pointers of different pointed-to types**
 - **`nullptr` required** — `NULL` is forbidden in safe zones; use `nullptr` to initialize or compare pointers
 
+#### Pointer conversion matrix
+
+| Conversion | In `_Safe` | In `_Unsafe` |
+|---|---|---|
+| `T *_Borrow` → `void *_Borrow` | **OK** (implicit) | OK |
+| `void *_Borrow` → `T *_Borrow` | **Forbidden** — explicit cast required, must be in `_Unsafe` | OK (explicit cast) |
+| `T *_Borrow` → raw `T *` | **Forbidden everywhere** | Forbidden everywhere |
+| `T *_Owned` → `void *_Owned` | OK (explicit cast) | OK |
+| `T *_Owned` → raw `T *` | Forbidden — use `__move_to_raw` | Forbidden — use `__move_to_raw` |
+| `fn(A *_Borrow)` → `fn(B *_Borrow)` (fn-ptr cast) | Forbidden in heterogeneous `_Safe`/`_Unsafe` declarations — use trampoline pattern | Forbidden in heterogeneous declarations — use trampoline pattern |
+
+**The void-borrow two-step cast** is the canonical pattern for casting between unrelated struct pointer types inside a `_Safe` function (e.g. vtable trampolines — see `c-to-bsc` §5 "C OO patterns"):
+
+```c
+/* Goal: cast public_t *_Borrow → private_t *_Borrow */
+private_t *_Borrow _Nonnull this = _Unsafe(
+    (private_t *_Borrow _Nonnull)(void *_Borrow _Nonnull)self);
+```
+
+- Step 1: `public_t *_Borrow → void *_Borrow` — implicit, allowed in `_Safe`.
+- Step 2: `void *_Borrow → private_t *_Borrow` — explicit cast, wrapped in `_Unsafe(expr)`.
+- Direct `public_t *_Borrow → private_t *_Borrow` is **forbidden** (different pointed-to types).
+
 ### Raw pointer params/returns are allowed in signatures
 A `_Safe` function **may** have raw pointer params/returns, and may have structs with pointer members or union types as params/returns. The restrictions apply to *operations on* pointers inside the safe zone, not their presence in signatures.
 

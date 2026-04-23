@@ -239,4 +239,44 @@ When debugging double-frees in code that uses this pattern, the most likely
 cause is field-level aliasing introduced by `clone` or `safe_swap` on the
 all-fields struct — see `/bsc-common-mistakes` §8.
 
+### 7.3 Raw pointer as heap buffer field (RawVec idiom)
+
+`_Owned` pointers **forbid array subscript** (`ptr[i]`). A struct that owns a
+resizable heap buffer and needs to index into it must keep the buffer as a plain
+raw `T *` field — NOT `T *_Owned`. The `_Owned struct` destructor handles freeing.
+
+```c
+// WRONG — _Owned ptr forbids subscript; this->data[i] = v is a compile error
+struct BadBuf {
+    uint8_t *_Owned data;
+    size_t   used;
+};
+
+// CORRECT — raw T* field; struct destructor owns the allocation
+_Owned struct GoodBuf {
+_Public:
+    uint8_t *data;   // raw pointer — indexing works
+    size_t   used;
+    size_t   cap;
+
+    ~GoodBuf(GoodBuf this) {
+        _Unsafe { free(this.data); }   // manual free; struct is the owner
+    }
+};
+```
+
+All reads and writes through the raw field must be wrapped in `_Unsafe`:
+
+```c
+_Safe void buf_write(GoodBuf *_Borrow _Nonnull this, uint8_t v) {
+    _Unsafe this->data[this->used] = v;   // raw subscript — _Unsafe statement
+    this->used += 1;
+}
+```
+
+For plain `struct` (non-`_Owned`) wrappers, the pattern is identical: raw `T *`
+field, `_Unsafe` around all dereferences, explicit `free` in a paired destroy
+function rather than a destructor. This is the correct idiom for all owned heap
+buffers in BSC — the distinction from `T *_Owned` is intentional and load-bearing.
+
 > See also: `bsc-borrowing`, `bsc-safe-zone`, `bsc-nullability`, `bsc-design`, `bsc-errors` Skills
