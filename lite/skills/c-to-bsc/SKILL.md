@@ -12,9 +12,25 @@ description: "BiSheng C translation from C. When you translate C code to BSC, ad
 - Keep `.c`/`.h` extensions; compile with `clang -x bsc file.c` (or `-xbsc`, both work).
 - The one new include you typically need: `#include "bishengc_safety.hbs"` where you use `safe_malloc`/`safe_free`.
 
-**Prefer `_Safe` functions; keep the `_Unsafe` surface minimal.** Default new or modified function signatures to `_Safe`. For specific operations that can't be safety-checked (variadic calls like `printf`, raw pointer math, FFI, pointer conversions that need casts), wrap ONLY those operations in `_Unsafe { ... }` blocks inside the `_Safe` function. Marking a whole function `_Unsafe` forces every caller to also be in `_Unsafe` context — the cost spreads.
+## Step 1: Default to `_Safe`; Keep `_Unsafe` Minimal
 
-## Step 1: Classify Every Pointer
+When you add or modify a function signature, default to `_Safe`. For specific operations that can't be safety-checked (variadic calls like `printf`, raw pointer math, FFI, pointer conversions that need casts), wrap ONLY those operations in `_Unsafe { ... }` blocks inside the `_Safe` function.
+
+**`_Unsafe` is contagious**: an `_Unsafe` function forces every caller to also be in `_Unsafe` context. Don't mark a whole function `_Unsafe` to avoid wrapping one line.
+
+```c
+// GOOD — interface _Safe, only the unsafe op is wrapped
+_Safe void log_value(const int *_Borrow v) {
+    _Unsafe { printf("%d\n", *v); }
+}
+
+// BAD — whole function _Unsafe for one line
+_Unsafe void log_value(const int *_Borrow v) {
+    printf("%d\n", *v);
+}
+```
+
+## Step 2: Classify Every Pointer
 
 For every pointer in the code, decide which category it belongs in:
 
@@ -26,7 +42,7 @@ For every pointer in the code, decide which category it belongs in:
 
 **Rule of thumb**: if a pointer touches `malloc`/`free`, it is almost always Category A.
 
-## Step 2: Replace `malloc`/`free`
+## Step 3: Replace `malloc`/`free`
 
 ```c
 // BEFORE (C)
@@ -54,7 +70,7 @@ _Unsafe {
 
 Going the other way — `_Owned` → raw — uses `__move_to_raw(p)` (transfers ownership out; `p` becomes unusable) or `(T *)&_Mut *p` (just borrows, `p` keeps ownership).
 
-## Step 3: Annotate Struct Fields
+## Step 4: Annotate Struct Fields
 
 **Rule**: the struct's cleanup/delete function is the source of truth. If cleanup frees `field` → mark `_Owned`. If it doesn't → leave plain (raw pointer) or use a value type.
 
@@ -76,16 +92,18 @@ typedef struct Token {
 
 **`_Borrow` as a struct field is heavily restricted** in BSC — the `_Borrow` field can't borrow from the containing struct or its other members, and a struct containing a `_Borrow` can't itself be borrowed. For back-references (linked lists, trees, graphs with parent pointers), **do NOT** use `_Borrow` — use raw pointers and wrap access in `_Unsafe`. The stdlib `LinkedList<T>` uses raw pointers for this reason.
 
-## Step 4: Annotate Function Signatures
+## Step 5: Annotate Function Signatures
 
 **Function takes a value it will free** → `_Owned` parameter:
 ```c
 void container_add(Container *_Borrow c, Node *_Owned item);
 ```
 
-**Function just reads** → `const _Borrow` parameter:
+**Function just reads** → `const _Borrow` parameter **and** `const _Borrow` receiver:
 ```c
 size_t count_items(const Node *_Borrow list);
+// For getters on a container, both receiver and return must be const:
+const Entry *_Borrow get(const Container *_Borrow this, size_t i);
 ```
 
 **Function mutates but doesn't free** → mut `_Borrow` parameter:
@@ -98,7 +116,9 @@ void container_clear(Container *_Borrow c);
 Node *_Owned create_node(void);
 ```
 
-## Step 5: Convert `&` to `&_Const` / `&_Mut` in `_Safe` Functions
+**Const-correctness of getters matters.** If you write a read-only getter with a non-const `Container *_Borrow` receiver, it becomes unreachable from any caller that holds a `const Container *_Borrow`. For read-only accessors (names starting with `get_`/`find_`/`has_`/`count_`/`is_`/`peek_`), make BOTH the receiver and the returned pointer `const`.
+
+## Step 6: Convert `&` to `&_Const` / `&_Mut` in `_Safe` Functions
 
 In `_Safe` functions, plain `&` is forbidden:
 
@@ -120,7 +140,7 @@ _Safe void caller(void) {
 
 Use `&_Const x` when the target is read-only, `&_Mut x` when the target is written.
 
-## Step 6: `_Owned` Pointers With Null
+## Step 7: `_Owned` Pointers With Null
 
 If an `_Owned` pointer can ever be null (init to `nullptr`, error path), add `_Nullable`:
 
@@ -138,7 +158,7 @@ safe_free((void *_Nullable _Owned)item);   // safe for nullable
 
 Use `nullptr` instead of `NULL` in BSC code.
 
-## Step 7: Compile
+## Step 8: Compile
 
 ```bash
 clang -x bsc file.c -fsyntax-only
@@ -158,9 +178,11 @@ Fix errors iteratively. The most common errors:
 - [ ] Platform-specific code (`#ifdef _WIN32`, `__declspec`, etc.) LEFT IN PLACE — BSC clang handles it
 - [ ] `#include` paths unchanged (still reference `.h`)
 - [ ] `#include "bishengc_safety.hbs"` added where safe_malloc/safe_free are used
+- [ ] Functions default to `_Safe`; `_Unsafe` only wraps specific operations (not whole functions)
 - [ ] Every pointer classified: `_Owned`, `_Borrow`, or raw
 - [ ] Struct fields annotated based on whether the cleanup function frees them
 - [ ] Function parameters and returns annotated
+- [ ] Read-only getters (`get_`/`find_`/`has_`/`count_`/`is_`/`peek_`) take `const T *_Borrow this` AND return `const ...*_Borrow`
 - [ ] `malloc` → `safe_malloc<T>(val)` where size is a single `T`
 - [ ] `free` → `safe_free((void *_Owned)p)` or `safe_free((void *_Nullable _Owned)p)`
 - [ ] Plain `&` in `_Safe` converted to `&_Const` or `&_Mut`
