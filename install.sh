@@ -302,15 +302,24 @@ rewrite to `T *_Owned`. The pattern is ALWAYS `T *_Owned`.
   - Raw → `_Owned`: `__take_from_raw(raw_ptr)` (after null-check if nullability-check is on)
   - `_Owned` → raw: `__move_to_raw(owned_ptr)` (transfers ownership) OR `(T *)&_Mut *owned_ptr` (just borrows, keeps ownership)
 
-## Code Verification
+## BSC Project Compile Command
 
-After writing or editing any `.cbs` or `.hbs` file, run:
+**[FILL IN: how to compile and verify BSC files in THIS project]**
 
-```bash
-clang <file> -fsyntax-only
+Replace this block with your project's specifics. Examples:
+
+```
+Compiler: /path/to/bsc/bin/clang   (NOT system clang — BSC needs a custom build)
+Includes: -I/path/to/libcbs/src -I./include
+Verify:   make check-file FILE=<file>
+    # or: /path/to/bsc/bin/clang -I<includes> -x bsc <file> -fsyntax-only
 ```
 
-Fix all compiler errors before reporting the task complete.
+If this section still says `[FILL IN: ...]`, **ASK the user** for the project's compile command before writing or editing any BSC code. The generic `clang <file> -fsyntax-only` below will fail for most projects (wrong compiler, missing include flags).
+
+## Code Verification
+
+After writing or editing any `.cbs`/`.hbs` file (or `.c`/`.h` compiled with `-x bsc`), run the project's verify command from the section above. Fix all compiler errors before reporting the task complete.
 
 ## LSP — Use Proactively
 
@@ -352,15 +361,22 @@ Wrong:   `_Owned int *p`, `_Nullable int *q`  (causes "unknown type name" error)
 - Use `nullptr`, never `NULL`, in BSC code
 - Inside `_Safe`: `&` is forbidden — use `&_Const x` (read) or `&_Mut x` (write)
 
-## Code Verification
+## BSC Project Compile Command
 
-After writing or editing any `.c`, `.h`, `.cbs`, or `.hbs` file, run:
+**[FILL IN: how to compile and verify BSC files in THIS project]**
 
-```bash
-clang -x bsc <file> -fsyntax-only
+Replace this block with your project's actual command, e.g.:
+
+```
+Compiler: /path/to/bsc/bin/clang   (NOT system clang)
+Verify:   /path/to/bsc/bin/clang -I./include -x bsc <file> -fsyntax-only
 ```
 
-Fix all compiler errors before reporting the task complete.
+If this block still says `[FILL IN: ...]`, **ASK the user** for the project's compile command before writing or editing any BSC code.
+
+## Code Verification
+
+After writing or editing any `.c`, `.h`, `.cbs`, or `.hbs` file, run the project's verify command from above. Fix all compiler errors before reporting the task complete.
 LITE_RULES_EOF
 }
 
