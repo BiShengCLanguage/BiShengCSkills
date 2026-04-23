@@ -5,15 +5,12 @@ description: "BiSheng C translation from C. When you translate C code to BSC, ad
 
 # C to BSC Translation (Lite — Keep `.c`/`.h` Extensions)
 
-## Core Approach — Keep the File Structure, Only Add Annotations
+## Core Approach — Change as Little as Possible
 
-**Fundamental rule: change the C codebase as little as possible.** Only ADD BSC ownership annotations. Do NOT restructure, rename, or strip anything.
+**Change the C codebase as little as you can.** Only ADD BSC ownership annotations. Change anything else only if the compiler genuinely requires it.
 
-- **Keep `.c` and `.h` file extensions.** Do NOT rename. Compile with `clang -x bsc file.c -o output` (or `-xbsc`, both work).
-- **Keep all platform-specific code in place** — `#ifdef _WIN32`, `__declspec(...)`, `__cdecl`, `__stdcall`, `extern "C"` guards. BSC is clang-based and handles all of these; removing them is churn that risks breaking cross-platform builds for no benefit.
-- **Keep `#include` paths unchanged.** Headers still reference `.h`, not `.hbs`. The only new include is `#include "bishengc_safety.hbs"` wherever you use `safe_malloc`/`safe_free`.
-
-Why: this lets your project build as plain C AND as BSC from the same sources during an incremental migration, and keeps review diffs focused on the ownership work.
+- Keep `.c`/`.h` extensions; compile with `clang -x bsc file.c` (or `-xbsc`, both work).
+- The one new include you typically need: `#include "bishengc_safety.hbs"` where you use `safe_malloc`/`safe_free`.
 
 ## Step 1: Classify Every Pointer
 

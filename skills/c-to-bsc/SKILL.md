@@ -30,28 +30,15 @@ cJSON *_Owned item = safe_malloc<cJSON>((cJSON){0});
 
 ## Translation Process
 
-### Step 1: Keep the File Structure — Don't Rename, Don't Strip (Fundamental Rule)
+### Step 1: Change as Little as Possible (Fundamental Rule)
 
-**Rule of thumb: change the C codebase as little as possible.** Only ADD BSC ownership annotations. Leave everything else — filenames, preprocessor conditionals, calling conventions, DLL markers, visibility macros — untouched.
+**Change the C codebase as little as you can.** Only ADD BSC ownership annotations. Change anything else only if the compiler genuinely requires it.
 
-**Do NOT rename `.c` → `.cbs` or `.h` → `.hbs`.** Keep the original extensions and compile with `clang -x bsc file.c` (or `-xbsc`, both forms work at both driver and `-cc1`). The BSC compiler treats the input as BSC regardless of extension.
+- Keep `.c`/`.h` file extensions; compile with `clang -x bsc file.c` (or `-xbsc`, both work at driver and `-cc1`).
+- Platform-specific code (`#ifdef _WIN32`, `__declspec(...)`, `__cdecl`, `__stdcall`, `extern "C"` guards, visibility macros) generally works as-is. BSC is clang-based; these either apply to the target platform or are silently ignored. Only touch them if a specific construct triggers a compile error.
+- `#include` paths stay as-is (still `.h`). The one new include you typically need: `#include "bishengc_safety.hbs"` wherever you use `safe_malloc`/`safe_free`.
 
-**Do NOT strip platform-specific code.** BSC is built on clang, which handles all of these:
-
-| Construct | Behavior in BSC |
-|---|---|
-| `#ifdef _WIN32` / `__GNUC__` / `_MSC_VER` | Preprocessor resolves based on target platform; inactive branches are dead code. Harmless. |
-| `__declspec(dllexport/dllimport)` | Clang accepts on non-Windows targets (no-op or warning). Harmless. |
-| `__cdecl` / `__stdcall` | Clang silently ignores on non-x86-Windows. Harmless. |
-| `#ifdef __cplusplus extern "C"` guards | `__cplusplus` is NOT defined in BSC compilation; the guarded block is skipped by the preprocessor. Harmless. |
-| `MYLIB_PUBLIC(type)` / other visibility macros | Left in place; they expand to whatever they currently expand to. Harmless. |
-
-**Why this rule:**
-- **Incremental migration** — the project can still build as plain C if the BSC work pauses. Two-mode builds (C and BSC from same sources) are common during long migrations.
-- **Minimal diff** — reviewers see only ownership annotations, not cross-platform churn.
-- **Cross-platform preserved** — if Windows builds come back later, the platform code is still there.
-
-Skip this step only if you have a concrete compiler error caused by a specific construct (rare). Otherwise: leave the existing structure alone and move to Step 3.
+Why: incremental migration lets the project build as plain C AND as BSC from the same sources; keeps review diffs focused on ownership; preserves cross-platform code if you need it later.
 
 ### Step 3: Analyze Ownership (THE CRITICAL STEP)
 
