@@ -32,7 +32,7 @@ cJSON *_Owned item = safe_malloc<cJSON>((cJSON){0});
 
 ### Step 1: Rename Files (or use `-x bsc`)
 - Default: `.c` → `.cbs`, `.h` → `.hbs`, update all `#include` directives accordingly
-- **Alternative**: keep `.c`/`.h` extensions and pass `-x bsc` to clang. The compiler treats the input as BSC regardless of extension. Syntax: `clang -x bsc file.c -o output` (with space, driver) or `clang -xbsc ...` (without space, `-cc1` only).
+- **Alternative**: keep `.c`/`.h` extensions and pass `-x bsc` (or equivalently `-xbsc`, no space) to clang. Both forms work at both the driver and `-cc1` levels. The compiler treats the input as BSC regardless of extension: `clang -x bsc file.c -o output`.
 - **When to keep `.c`/`.h`**: incremental migration of a large codebase where you want to compile some files as BSC and others as C without renaming everything; keeping compatibility with external C tooling that matches on extension.
 - **When to rename**: greenfield BSC project, or when you're committing fully to BSC and want LSP/editors to recognize the file as BSC automatically (most tooling keys off `.cbs`/`.hbs`).
 
@@ -125,19 +125,61 @@ BSC provides `safe_malloc<T>(val)` and `safe_free()` from `bishengc_safety.hbs`.
 - `_Safe T *_Owned safe_malloc<T>(T t)` — allocates, initializes to `t`, returns `T *_Owned`
 - `_Safe void safe_free(void *_Nullable _Owned p)` — frees a nullable owned pointer
 
-| C (original) | BSC (preferred: safe_malloc) | BSC (fallback: raw malloc in _Unsafe) |
+| C (original) | BSC (preferred: safe_malloc) | BSC (raw malloc + __take_from_raw) |
 |---|---|---|
-| `malloc(sizeof(int))` | `safe_malloc<int>(0)` | `(int *_Owned)malloc(sizeof(int))` |
-| `free(p)` | `safe_free((void *_Owned)p)` | `_Unsafe { free((void *_Owned)p); }` |
+| `malloc(sizeof(int))` | `safe_malloc<int>(0)` | `__take_from_raw((int *)malloc(sizeof(int)))` |
+| `free(p)` | `safe_free((void *_Owned)p)` | `_Unsafe { free(__move_to_raw(p)); }` |
 | `p = NULL; free(p);` | `safe_free((void *_Nullable _Owned)p)` | N/A — use safe_free for nullable |
 
+### CRITICAL: `(T *_Owned)` and `(T *)` casts between raw and `_Owned` are forbidden everywhere
+
+**The compiler rejects direct C casts between `_Owned` and raw pointers in every context — including `_Unsafe`.** You MUST use the builtins `__take_from_raw` (raw → `_Owned`) and `__move_to_raw` (`_Owned` → raw).
+
+```c
+// WRONG — rejected by compiler with "cannot cast between _Owned and raw pointer;
+//         use __move_to_raw or __take_from_raw for ownership transfer"
+int *_Owned p = (int *_Owned)malloc(sizeof(int));   // ERROR
+int *raw = (int *)p;                                  // ERROR (p is _Owned)
+
+// CORRECT
+int *_Owned p = __take_from_raw((int *)malloc(sizeof(int)));
+int *raw = __move_to_raw(p);                          // transfers ownership out; p unusable after
+```
+
+Verified against `clang/test/BSC/Negative/Ownership/RuleCheck/owned_raw_cast_disallowed/owned_raw_cast_disallowed.cbs` and `clang/test/BSC/Positive/Ownership/owned_raw_transfer_builtins/owned_raw_transfer_builtins.cbs`.
+
+**Exception — owned-to-owned-via-void is allowed**: `(void *_Owned)p` when `p` is `T *_Owned` is fine (both sides are `_Owned`; no raw involved). This is why `safe_free((void *_Owned)p)` stays correct.
+
+**Borrow-then-cast pattern** — when you need to pass a raw pointer to a C API without transferring ownership:
+```c
+int *_Owned p = safe_malloc<int>(42);
+foo((int *)&_Mut *p);       // borrow through *p, then cast borrow to raw. p keeps ownership.
+safe_free((void *_Owned)p);
+```
+
+### Null-check before `__take_from_raw`
+
+When nullability-check is enabled (default under `-nullability-check=safeonly`), `__take_from_raw(raw)` errors if `raw` has not been null-checked. Either null-check first, or declare the result as `_Nullable`:
+
+```c
+// Option A: null-check first, assign to non-nullable _Owned
+int *raw = (int *)malloc(sizeof(int));
+if (raw != nullptr) {
+    int *_Owned p = __take_from_raw(raw);
+    // use p
+}
+
+// Option B: accept nullability in the result type
+int *_Owned _Nullable p = __take_from_raw((int *)malloc(sizeof(int)));
+```
+
 **When to use which:**
-- `safe_malloc<T>(val)` — use when allocating a single value of known type. Returns `T *_Owned`, initializes to `val`. No cast needed. Works in `_Safe` context.
+- `safe_malloc<T>(val)` — use when allocating a single value of known type. Returns `T *_Owned`, initializes to `val`. No cast or null-check needed. Works in `_Safe` context. **Covers almost all C `malloc(sizeof(T))` cases** — don't reach for the raw `malloc` fallback unless you need variable size.
 - `safe_free(p)` — **preferred for all frees**. Parameter type is `void *_Nullable _Owned`. Cast based on the SOURCE pointer's type:
   - If `p` is `T *_Owned` (non-nullable): `safe_free((void *_Owned)p)`. The `_Nullable` widening at the call is implicit.
   - If `p` is `T *_Nullable _Owned`: `safe_free((void *_Nullable _Owned)p)`. The cast must preserve `_Nullable` — casting to non-nullable `(void *_Owned)` would narrow and error.
-- Raw `malloc` with `_Owned` cast — use when `safe_malloc` doesn't fit: variable-size allocations (`malloc(n * sizeof(T))`), `calloc`, `realloc`, `strdup`, or buffer allocations. Requires `_Unsafe` context.
-- Raw `free()` — takes `void *_Owned` (non-nullable). Use only in `_Unsafe` blocks. If the pointer might be NULL, use `safe_free` instead.
+- Raw `malloc` + `__take_from_raw` — use only when `safe_malloc<T>` doesn't fit: variable-size allocations (`malloc(n * sizeof(T))`), `calloc`, `realloc`, `strdup`, or buffer allocations. Requires `_Unsafe` context.
+- Raw `free()` — takes raw `void *`. Call with `__move_to_raw(owned_ptr)` to transfer the `_Owned` pointer out. Use only in `_Unsafe` blocks. If the pointer might be NULL, use `safe_free` instead.
 
 #### Converting malloc → safe_malloc
 ```c
@@ -148,10 +190,12 @@ memset(n, 0, sizeof(Node));
 // AFTER (BSC) — preferred
 Node *_Owned n = safe_malloc<Node>((Node){0});
 
-// AFTER (BSC) — fallback for when safe_malloc doesn't fit
+// AFTER (BSC) — raw malloc + __take_from_raw (when safe_malloc doesn't fit)
 _Unsafe {
-    Node *_Owned n = (Node *_Owned)malloc(sizeof(Node));
-    memset(n, 0, sizeof(Node));
+    Node *raw = (Node *)malloc(sizeof(Node));
+    if (raw == nullptr) { /* handle */ }
+    memset(raw, 0, sizeof(Node));
+    Node *_Owned n = __take_from_raw(raw);
 }
 ```
 
@@ -169,34 +213,43 @@ safe_free((void *_Owned)node);
 safe_free((void *_Nullable _Owned)node->name);  // safe even if name is NULL
 ```
 
-#### Variable-size allocations — must use raw malloc
+#### Variable-size allocations — raw malloc + `__take_from_raw`
 ```c
 // BEFORE (C)
 char *buf = (char*)malloc(length + 1);
 char *copy = strdup(original);
-buf = (char*)realloc(buf, newsize);
 
-// AFTER (BSC) — safe_malloc can't do this, use raw malloc in _Unsafe
+// AFTER (BSC) — raw malloc in _Unsafe, then __take_from_raw to get _Owned
 _Unsafe {
-    char *_Owned buf = (char *_Owned)malloc(length + 1);
-    char *_Owned copy = (char *_Owned)strdup(original);
-    buf = (char *_Owned)realloc((void *_Owned)buf, newsize);
+    char *raw_buf = (char *)malloc(length + 1);
+    if (raw_buf == nullptr) { /* handle */ }
+    char *_Owned buf = __take_from_raw(raw_buf);
+
+    char *raw_copy = strdup(original);
+    if (raw_copy == nullptr) { /* handle */ }
+    char *_Owned copy = __take_from_raw(raw_copy);
 }
 ```
 
 #### Realloc ownership semantics
-`realloc` is tricky — it consumes the old pointer and returns a new one:
+`realloc` takes a raw `void *` and returns a raw `void *`. You must `__move_to_raw` the old owned buffer out, call `realloc`, then `__take_from_raw` the result. On failure (NULL return), C's `realloc` does NOT free the old buffer, but ownership has already been moved out — so you must recover the raw and re-wrap it:
+
 ```c
 _Unsafe {
-    // realloc takes ownership of old buffer, returns new owned buffer
-    // On failure, realloc returns NULL but old buffer is NOT freed
-    char *_Owned _Nullable new_buf = (char *_Owned _Nullable)realloc((void *_Owned)old_buf, newsize);
-    if (new_buf == nullptr) {
-        // old_buf is still valid and owned — handle error
-        safe_free((void *_Owned)old_buf);
+    // Move out the old _Owned buffer to a raw pointer
+    char *raw_old = __move_to_raw(old_buf);
+
+    char *raw_new = (char *)realloc(raw_old, newsize);
+    if (raw_new == nullptr) {
+        // realloc failed: raw_old is still valid per C semantics.
+        // Re-wrap it into _Owned and free.
+        char *_Owned recovered = __take_from_raw(raw_old);
+        safe_free((void *_Owned)recovered);
         return;
     }
-    old_buf = new_buf;  // transfer ownership
+    // Success: raw_new is the moved/grown buffer. Wrap into _Owned.
+    char *_Owned new_buf = __take_from_raw(raw_new);
+    old_buf = new_buf;   // old_buf now owns the resized buffer
 }
 ```
 
@@ -205,23 +258,45 @@ _Unsafe {
 Only annotate pointers that clearly fall into Category A or B. When in doubt, leave as raw and add a `/* TODO: ownership unclear */` comment.
 
 #### Struct fields
+
+**Rule**: a struct's cleanup/delete function is the source of truth. If the cleanup frees `field` → mark `_Owned`. If not → leave the field as plain (raw) pointer or use a value type. **Do NOT use `_Borrow` as a struct field unless you have verified the design works** (see the limits below).
+
 ```c
 // BEFORE (C)
-typedef struct Node {
-    struct Node *next;
-    struct Node *prev;
+typedef struct Token {
     char *name;
-    const char *label;
-} Node;
+    char *value;
+    int kind;
+} Token;
 
-// AFTER (BSC) — analyze the delete/free function to determine ownership
-typedef struct Node {
-    struct Node *_Owned next;      // delete function walks and frees next → owned
-    struct Node *_Borrow prev;     // delete function does NOT free prev → borrowed
-    char *_Owned name;             // delete function frees name → owned
-    const char *_Borrow label;     // never freed → borrowed
-} Node;
+// AFTER (BSC) — cleanup frees name and value; kind is plain data
+typedef struct Token {
+    char *_Owned name;             // freed by ~Token / cleanup → _Owned
+    char *_Owned value;            // freed by ~Token / cleanup → _Owned
+    int kind;                      // plain value
+} Token;
 ```
+
+#### `_Borrow` as a struct field — tightly restricted, don't use for back-references
+
+Per user manual §3.2.6, struct `_Borrow` fields are subject to rules that rule out most C patterns:
+
+1. A struct's `_Borrow` field **cannot borrow from the containing struct or its other fields** (rule 3). So `s.p = &_Const s.m` errors.
+2. A struct containing a `_Borrow` field **cannot itself be borrowed** (rule 5). This cascades: once `T` has a `_Borrow` member, `T *_Borrow` is illegal.
+3. Heap-allocated structs where `_Borrow` fields cross-reference other heap nodes — classic linked list / tree with parent pointers — **do not satisfy the borrow checker's lifetime model**. The target of the borrow could be freed independently.
+
+**For back-references in linked lists, trees, graphs, observer patterns**: use raw pointers (no annotation) with access wrapped in `_Unsafe`. See §"Circular structures" below. The stdlib `LinkedList<T>` (`libcbs/src/list/list.hbs`) uses raw pointers for exactly this reason:
+
+```c
+// From stdlib — linked list nodes use raw pointers, NOT _Owned or _Borrow
+struct _BSC_ListNode<T> {
+    _BSC_ListNode<T>* next;    // raw
+    _BSC_ListNode<T>* prev;    // raw
+    T element;
+};
+```
+
+The old "doubly-linked list with `_Owned next` and `_Borrow prev`" example that used to appear here was wrong — it neither compiles cleanly nor represents a valid BSC pattern. Use Pattern A from §"Circular structures" instead.
 
 #### Function parameters — borrowing (when not taking ownership)
 ```c
@@ -249,10 +324,20 @@ Node* create_node(void) {
     return n;  // caller must free
 }
 
-// AFTER (BSC)
+// AFTER (BSC) — preferred: use safe_malloc
 Node *_Owned create_node(void) {
-    Node *_Owned n = (Node *_Owned)malloc(sizeof(Node));
+    Node *_Owned n = safe_malloc<Node>((Node){0});
     return n;  // ownership transfers to caller
+}
+
+// AFTER (BSC) — if you must use raw malloc, wrap via __take_from_raw
+Node *_Owned create_node_raw(void) {
+    _Unsafe {
+        Node *raw = (Node *)malloc(sizeof(Node));
+        if (raw == nullptr) { /* handle */ }
+        Node *_Owned n = __take_from_raw(raw);
+        return n;
+    }
 }
 ```
 
@@ -363,7 +448,7 @@ Node *node = malloc(...);
 process(&node->value);
 
 // AFTER (BSC)
-Node *_Owned node = (Node *_Owned)malloc(...);
+Node *_Owned node = safe_malloc<Node>((Node){0});
 process(&_Mut node->value);    // or &_Const if process only reads
 ```
 
@@ -422,8 +507,9 @@ Options:
 
 #### String literals vs allocated strings
 ```c
-const char *literal = "hello";                              // raw pointer — string literal, never freed
-char *_Owned allocated = (char *_Owned)strdup("hello");     // heap copy — must free
+const char *literal = "hello";                                         // raw pointer — string literal, never freed
+char *_Owned allocated;                                                // heap copy — must free
+_Unsafe { allocated = __take_from_raw(strdup("hello")); }              // strdup returns raw; wrap via __take_from_raw
 ```
 
 #### Deciding `struct` vs `_Owned struct` when porting
@@ -756,6 +842,8 @@ _Safe static void destroy(private_t *_Borrow _Nonnull this)
 }
 ```
 
+**WARNING — this is a silent use-after-free hazard.** The compiler's ownership model does NOT see the `free(this)` through a `_Borrow`. Any caller that continues to hold or use an `_Owned` or `_Borrow` of the same object after `destroy` returns will get a runtime use-after-free that the checker did not catch. This escape is only acceptable because vtable protocols demand the trampoline parameter be `public_t *_Borrow` — the C interface is fixed and the `_Owned` alternative would break the vtable contract. In ordinary (non-vtable) code, always take `_Owned this` in a destroy function so the compiler models the free.
+
 **Checklist for porting a C vtable struct:**
 - [ ] Do NOT use `METHOD` macro or `transparent_union` tricks
 - [ ] Write one `_Safe` body per slot — takes `private_t *_Borrow _Nonnull`
@@ -782,7 +870,7 @@ static hooks global_hooks = { malloc, free };
 
 // AFTER (BSC) — remove hooks, use direct calls with _Owned
 // Delete the hooks struct entirely
-// Replace global_hooks.allocate(size) → malloc(size) in _Unsafe, cast to _Owned
+// Replace global_hooks.allocate(size) → malloc(size) in _Unsafe, then __take_from_raw
 // Replace global_hooks.deallocate(p) → safe_free((void *_Owned)p)
 ```
 
@@ -1014,10 +1102,12 @@ internal_func(item);  // ERROR: ownership mismatch
 // FIX Option A: Make the function accept _Owned if it consumes
 void internal_func(cJSON *_Owned item);
 
-// FIX Option B: Cast in _Unsafe if function borrows temporarily
-_Unsafe { internal_func((cJSON *)item); }
+// FIX Option B: Borrow-then-cast (function borrows temporarily; item keeps ownership)
+//   `(cJSON *)item` is a direct owned→raw cast — forbidden, even in _Unsafe.
+//   The correct pattern is: take a borrow first, then cast the borrow to raw.
+_Unsafe { internal_func((cJSON *)&_Mut *item); }
 
-// FIX Option C: Make function accept _Borrow
+// FIX Option C: Make function accept _Borrow (best when function doesn't free)
 void internal_func(cJSON *_Borrow item);
 ```
 
@@ -1039,12 +1129,15 @@ cJSON *_Owned detach_item(cJSON *parent) {
 }
 ```
 ```c
-// FIX — wrap the boundary conversion in _Unsafe
+// FIX — use __take_from_raw to transfer ownership from a raw pointer.
+//   (cJSON *_Owned)item is a raw→owned C cast — forbidden, even in _Unsafe.
 cJSON *_Owned detach_item(cJSON *parent) {
     cJSON *item = parent->child;
-    _Unsafe { return (cJSON *_Owned)item; }
+    // If the caller must be sure item is non-null, null-check first.
+    _Unsafe { return __take_from_raw(item); }
 }
 ```
+**Note**: `__take_from_raw` preserves nullability of its argument. If `item` could be null and nullability-check is on, either null-check first or declare the return type `cJSON *_Owned _Nullable`.
 
 ### Error 5: Using `NULL` instead of `nullptr` for `_Owned` pointers
 ```c
@@ -1095,7 +1188,9 @@ use-after-move hazard in `_Unsafe`. Pick Option A or B.
 - [ ] **Interior/arithmetic/iterator pointers** left as raw `T *`
 - [ ] **Address-of in _Safe**: `&x` converted to `&_Const x` (read-only) or `&_Mut x` (mutable); `&_Mut` not used on const, literals, or globals
 - [ ] **Single-value allocations** converted to `safe_malloc<T>(val)` where possible
-- [ ] **Variable-size allocations** (malloc/calloc/strdup/realloc) cast to `T *_Owned` in `_Unsafe`
+- [ ] **Variable-size allocations** (malloc/calloc/strdup/realloc) go through `__take_from_raw(raw_ptr)` in `_Unsafe` — direct `(T *_Owned)` C casts are forbidden everywhere, not just in `_Safe`
+- [ ] **Returning raw as `_Owned`**: use `__take_from_raw(raw_ptr)`, not a C cast
+- [ ] **Passing `_Owned` where raw is expected**: use borrow-then-cast `(T *)&_Mut *p` (keeps ownership) or `__move_to_raw(p)` (transfers ownership out)
 - [ ] **Every free()** converted to `safe_free((void *_Owned)p)` or `safe_free((void *_Nullable _Owned)p)`
 - [ ] **Function parameters** annotated where ownership is clear
 - [ ] **Function returns** annotated where ownership is clear

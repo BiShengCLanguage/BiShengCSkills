@@ -295,10 +295,12 @@ rewrite to `T *_Owned`. The pattern is ALWAYS `T *_Owned`.
 ## Quick Reference
 
 - Files: `.cbs` (source), `.hbs` (header). Compile: `clang file.cbs -o output`
-- `.c`/`.h` files can be compiled as BSC with `-x bsc` (e.g. `clang -x bsc file.c -o output`) — useful for incremental C→BSC migration
+- `.c`/`.h` files can be compiled as BSC with `-x bsc` (or `-xbsc`, both work): `clang -x bsc file.c -o output`
 - `#include "bishengc_safety.hbs"` for safe APIs
 - Prefer `safe_malloc<T>(val)` (returns `T *_Owned`, no cast) and `safe_free((void *_Owned)p)`
-- Raw `malloc`/`free` require `_Unsafe` context and `(T *_Owned)` cast
+- Raw↔`_Owned` direct C casts are **forbidden even in `_Unsafe`**. Use the builtins:
+  - Raw → `_Owned`: `__take_from_raw(raw_ptr)` (after null-check if nullability-check is on)
+  - `_Owned` → raw: `__move_to_raw(owned_ptr)` (transfers ownership) OR `(T *)&_Mut *owned_ptr` (just borrows, keeps ownership)
 
 ## Code Verification
 
@@ -345,7 +347,7 @@ Wrong:   `_Owned int *p`, `_Nullable int *q`  (causes "unknown type name" error)
 
 - `.c`/`.h` files: compile with `clang -x bsc file.c -o output` (no renaming needed)
 - Include `bishengc_safety.hbs` for `safe_malloc<T>(val)` and `safe_free((void *_Owned)p)`
-- Raw `malloc`/`free` require `_Unsafe` context and `(T *_Owned)` cast
+- Raw↔`_Owned` C casts are **forbidden everywhere**, even in `_Unsafe`. Use `__take_from_raw(raw_ptr)` and `__move_to_raw(owned_ptr)` instead of `(T *_Owned)` / `(T *)` casts
 - `_Owned` and `_Borrow` are **non-null by default** — add `_Nullable` if the value may be null
 - Use `nullptr`, never `NULL`, in BSC code
 - Inside `_Safe`: `&` is forbidden — use `&_Const x` (read) or `&_Mut x` (write)

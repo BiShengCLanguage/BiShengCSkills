@@ -49,32 +49,41 @@ Node *_Owned n = safe_malloc<Node>((Node){0});
 safe_free((void *_Owned)n);
 ```
 
-For variable-size allocations or `strdup`, keep raw `malloc`/`free` inside `_Unsafe`:
+For variable-size allocations or `strdup`, use raw `malloc` inside `_Unsafe`, then convert to `_Owned` with `__take_from_raw`. **Direct `(T *_Owned)malloc(...)` C casts are forbidden everywhere** — even inside `_Unsafe` — per compiler rule. You MUST use the builtins:
 
 ```c
 _Unsafe {
-    char *_Owned buf = (char *_Owned)malloc(length + 1);
-    safe_free((void *_Owned)buf);
+    char *raw = (char *)malloc(length + 1);
+    if (raw == nullptr) { /* handle */ }
+    char *_Owned buf = __take_from_raw(raw);    // raw → _Owned via builtin
+    // ...use buf...
+    safe_free((void *_Owned)buf);                // safe_free accepts _Owned directly
 }
 ```
 
+Going the other way — `_Owned` → raw — uses `__move_to_raw(p)` (transfers ownership out; `p` becomes unusable) or `(T *)&_Mut *p` (just borrows, `p` keeps ownership).
+
 ## Step 4: Annotate Struct Fields
+
+**Rule**: the struct's cleanup/delete function is the source of truth. If cleanup frees `field` → mark `_Owned`. If it doesn't → leave plain (raw pointer) or use a value type.
 
 ```c
 // BEFORE (C)
-typedef struct Node {
-    struct Node *next;
+typedef struct Token {
     char *name;
-    const char *label;
-} Node;
+    char *value;
+    int kind;
+} Token;
 
-// AFTER — based on what the cleanup function frees
-typedef struct Node {
-    struct Node *_Owned next;    // freed by cleanup → _Owned
-    char *_Owned name;            // freed by cleanup → _Owned
-    const char *_Borrow label;    // never freed → _Borrow
-} Node;
+// AFTER — cleanup frees name and value, kind is plain data
+typedef struct Token {
+    char *_Owned name;
+    char *_Owned value;
+    int kind;
+} Token;
 ```
+
+**`_Borrow` as a struct field is heavily restricted** in BSC — the `_Borrow` field can't borrow from the containing struct or its other members, and a struct containing a `_Borrow` can't itself be borrowed. For back-references (linked lists, trees, graphs with parent pointers), **do NOT** use `_Borrow` — use raw pointers and wrap access in `_Unsafe`. The stdlib `LinkedList<T>` uses raw pointers for this reason.
 
 ## Step 5: Annotate Function Signatures
 
