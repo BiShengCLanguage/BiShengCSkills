@@ -286,6 +286,7 @@ rewrite to `T *_Owned`. The pattern is ALWAYS `T *_Owned`.
 ## Quick Reference
 
 - Files: `.cbs` (source), `.hbs` (header). Compile: `clang file.cbs -o output`
+- `.c`/`.h` files can be compiled as BSC with `-x bsc` (e.g. `clang -x bsc file.c -o output`) — useful for incremental C→BSC migration
 - `#include "bishengc_safety.hbs"` for safe APIs
 - Prefer `safe_malloc<T>(val)` (returns `T *_Owned`, no cast) and `safe_free((void *_Owned)p)`
 - Raw `malloc`/`free` require `_Unsafe` context and `(T *_Owned)` cast

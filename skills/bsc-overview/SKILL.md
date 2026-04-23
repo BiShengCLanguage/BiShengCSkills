@@ -9,9 +9,9 @@ description: "BiSheng C language overview. When you need to understand what BiSh
 
 BiSheng C (BSC) is a **superset of C** with Rust-inspired memory safety, traits, generics, and async/await. All valid C code is valid BSC code.
 
-- Source files: `.cbs`
-- Header files: `.hbs`
-- Compiler: clang fork — `clang file.cbs -o output`
+- Source files: `.cbs` (or `.c` compiled with `-x bsc`)
+- Header files: `.hbs` (or `.h` compiled with `-x bsc`)
+- Compiler: clang fork — `clang file.cbs -o output`, or `clang -x bsc file.c -o output` to treat a `.c` file as BSC
 
 ## CRITICAL Syntax Rule
 

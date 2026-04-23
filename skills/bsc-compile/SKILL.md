@@ -47,7 +47,13 @@ If no path is configured, ask the user. Then use the full path in all compile co
 # With debug info
 /path/to/bsc/bin/clang -g file.cbs -o output
 /path/to/bsc/bin/clang -g -gdwarf-4 file.cbs -o output  # better gdb compat
+
+# Compile .c / .h files AS BSC (overrides extension-based detection)
+/path/to/bsc/bin/clang -x bsc file.c -o output       # driver form, space-separated
+/path/to/bsc/bin/clang -cc1 -xbsc file.c             # cc1 form, no space
 ```
+
+**`-x bsc` use cases**: incremental C→BSC migration without renaming every file; keeping the original `.c`/`.h` extensions for compatibility with external tooling. Only `.cbs`/`.hbs` are auto-detected as BSC — everything else needs the flag. Most editor/LSP tooling keys off `.cbs`/`.hbs`, so keeping `.c`/`.h` means you lose BSC-aware editor features.
 
 ## 3. Include Paths
 

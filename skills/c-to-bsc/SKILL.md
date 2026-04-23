@@ -30,10 +30,11 @@ cJSON *_Owned item = safe_malloc<cJSON>((cJSON){0});
 
 ## Translation Process
 
-### Step 1: Rename Files
-- `.c` → `.cbs`
-- `.h` → `.hbs`
-- Update all `#include` directives accordingly
+### Step 1: Rename Files (or use `-x bsc`)
+- Default: `.c` → `.cbs`, `.h` → `.hbs`, update all `#include` directives accordingly
+- **Alternative**: keep `.c`/`.h` extensions and pass `-x bsc` to clang. The compiler treats the input as BSC regardless of extension. Syntax: `clang -x bsc file.c -o output` (with space, driver) or `clang -xbsc ...` (without space, `-cc1` only).
+- **When to keep `.c`/`.h`**: incremental migration of a large codebase where you want to compile some files as BSC and others as C without renaming everything; keeping compatibility with external C tooling that matches on extension.
+- **When to rename**: greenfield BSC project, or when you're committing fully to BSC and want LSP/editors to recognize the file as BSC automatically (most tooling keys off `.cbs`/`.hbs`).
 
 ### Step 2: Strip Platform-Specific Code
 - Remove `#ifdef _WIN32` / `__GNUC__` / `_MSC_VER` blocks
