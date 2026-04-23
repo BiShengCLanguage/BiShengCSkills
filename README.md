@@ -44,6 +44,19 @@ bash install.sh -a all       # All of the above
 | **Copilot** | `.github/copilot-instructions.md` | All skills concatenated with critical rules header |
 | **Codex** | `AGENTS.md` | All skills concatenated with critical rules header |
 
+### Lite Mode (for less-capable models)
+
+If you're using a weaker model (smaller local LLM, older model, or one that struggles with many skills at once), install the lite version: 5 condensed skills + a 28-line always-loaded rules file.
+
+```bash
+bash install.sh -a claude --lite              # Claude Code lite (5 skills, no agents)
+bash install.sh -a opencode --lite            # OpenCode lite
+```
+
+**Lite includes only**: `bsc-ownership`, `bsc-borrowing`, `bsc-safe-zone`, `bsc-nullability`, and `c-to-bsc` (the `c-to-bsc` lite version always keeps `.c`/`.h` extensions and uses `-x bsc` — no renaming).
+
+Lite mode skips: agents (bsc-planner, bsc-learn), advanced skills (traits, generics, coroutines, stdlib, LSP, etc.), and the Working Principles section.
+
 ### Uninstall
 
 ```bash

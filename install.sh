@@ -59,6 +59,7 @@ ERRORS_DIR="$SCRIPT_DIR/errors"
 ADAPTER="all"
 TARGET="."
 ACTION="install"
+LITE=false
 
 # --- Parse args ---
 while [ $# -gt 0 ]; do
@@ -66,22 +67,30 @@ while [ $# -gt 0 ]; do
         -a|--adapter)  ADAPTER="$2"; shift 2 ;;
         --uninstall)   ACTION="uninstall"; shift ;;
         --list)        ACTION="list"; shift ;;
+        --lite)        LITE=true; shift ;;
         -h|--help)     ACTION="help"; shift ;;
         *)             TARGET="$1"; shift ;;
     esac
 done
 
+# --- Lite mode: 5 condensed skills for less-capable models ---
+if [ "$LITE" = "true" ]; then
+    SKILLS_DIR="$SCRIPT_DIR/lite/skills"
+    AGENTS_DIR=""   # no agents in lite mode
+fi
+
 TARGET="$(cd "$TARGET" && pwd)"
 
 # --- Help ---
 if [ "$ACTION" = "help" ]; then
-    echo "Usage: install.sh [-a adapter] [--uninstall] [--list] [project_dir]"
+    echo "Usage: install.sh [-a adapter] [--lite] [--uninstall] [--list] [project_dir]"
     echo ""
     echo "Adapters: claude, cursor, windsurf, opencode, copilot, codex, all"
     echo ""
     echo "Examples:"
     echo "  bash install.sh                    # auto-detect tools, install to current dir"
     echo "  bash install.sh -a claude          # Claude Code only"
+    echo "  bash install.sh -a claude --lite   # Claude Code, 5 condensed skills for weaker models"
     echo "  bash install.sh -a cursor .        # Cursor rules in current dir"
     echo "  bash install.sh --list             # show all available skills"
     echo "  bash install.sh --uninstall        # remove BSC skills"
@@ -315,6 +324,44 @@ known clangd limitations, fallback-to-Grep rules), load `/bsc-lsp`.
 RULES_EOF
 }
 
+# --- Helper: write LITE always-loaded BSC rules (condensed for weaker models) ---
+write_always_loaded_rules_lite() {
+    local target_file="$1"
+    if [ -f "$target_file" ] && grep -q "BiSheng C" "$target_file" 2>/dev/null; then
+        return
+    fi
+    cat >> "$target_file" << 'LITE_RULES_EOF'
+
+# BiSheng C (BSC) — Project Rules
+
+## Pointer Qualifier Grammar (CRITICAL)
+
+`_Owned`, `_Borrow`, `_Nullable`, `_Nonnull` are pointer qualifiers, like `const`. They go AFTER `*`, never before the type.
+
+Correct: `int *_Owned p`, `const int *_Borrow r`, `int *_Owned _Nullable q`
+Wrong:   `_Owned int *p`, `_Nullable int *q`  (causes "unknown type name" error)
+
+## Quick Rules
+
+- `.c`/`.h` files: compile with `clang -x bsc file.c -o output` (no renaming needed)
+- Include `bishengc_safety.hbs` for `safe_malloc<T>(val)` and `safe_free((void *_Owned)p)`
+- Raw `malloc`/`free` require `_Unsafe` context and `(T *_Owned)` cast
+- `_Owned` and `_Borrow` are **non-null by default** — add `_Nullable` if the value may be null
+- Use `nullptr`, never `NULL`, in BSC code
+- Inside `_Safe`: `&` is forbidden — use `&_Const x` (read) or `&_Mut x` (write)
+
+## Code Verification
+
+After writing or editing any `.c`, `.h`, `.cbs`, or `.hbs` file, run:
+
+```bash
+clang -x bsc <file> -fsyntax-only
+```
+
+Fix all compiler errors before reporting the task complete.
+LITE_RULES_EOF
+}
+
 # --- Install: Claude Code ---
 install_claude() {
     local skills_dst="$TARGET/.claude/skills"
@@ -344,8 +391,14 @@ install_claude() {
         done
     fi
 
-    # Install CLAUDE.md with always-loaded BSC rules (shared) + Claude-specific agent sections
+    # Install CLAUDE.md with always-loaded BSC rules
     local claude_md="$TARGET/CLAUDE.md"
+    if [ "$LITE" = "true" ]; then
+        write_always_loaded_rules_lite "$claude_md"
+        echo "  Claude Code: installed $count lite skills to .claude/skills/"
+        echo "  Claude Code: added condensed BSC rules to CLAUDE.md"
+        return
+    fi
     write_always_loaded_rules "$claude_md"
     if ! grep -q "bsc-planner" "$claude_md" 2>/dev/null; then
         cat >> "$claude_md" << 'CLAUDE_EXTRA_EOF'
@@ -407,7 +460,11 @@ install_opencode() {
     done
 
     # Install AGENTS.md with always-loaded BSC rules (same content as CLAUDE.md)
-    write_always_loaded_rules "$TARGET/AGENTS.md"
+    if [ "$LITE" = "true" ]; then
+        write_always_loaded_rules_lite "$TARGET/AGENTS.md"
+    else
+        write_always_loaded_rules "$TARGET/AGENTS.md"
+    fi
 
     echo "  OpenCode: installed $count skills to .opencode/skills/"
     echo "  OpenCode: added BSC rules to AGENTS.md"
