@@ -12,6 +12,8 @@ description: "BiSheng C translation from C. When you translate C code to BSC, ad
 - Keep `.c`/`.h` extensions; compile with `clang -x bsc file.c` (or `-xbsc`, both work).
 - The one new include you typically need: `#include "bishengc_safety.hbs"` where you use `safe_malloc`/`safe_free`.
 
+**Prefer `_Safe` functions; keep the `_Unsafe` surface minimal.** Default new or modified function signatures to `_Safe`. For specific operations that can't be safety-checked (variadic calls like `printf`, raw pointer math, FFI, pointer conversions that need casts), wrap ONLY those operations in `_Unsafe { ... }` blocks inside the `_Safe` function. Marking a whole function `_Unsafe` forces every caller to also be in `_Unsafe` context — the cost spreads.
+
 ## Step 1: Classify Every Pointer
 
 For every pointer in the code, decide which category it belongs in:

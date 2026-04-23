@@ -40,6 +40,26 @@ cJSON *_Owned item = safe_malloc<cJSON>((cJSON){0});
 
 Why: incremental migration lets the project build as plain C AND as BSC from the same sources; keeps review diffs focused on ownership; preserves cross-platform code if you need it later.
 
+### Step 2: Default Functions to `_Safe`; Keep `_Unsafe` Minimal
+
+When you add or modify a function signature, default to `_Safe`. Only mark a function `_Unsafe` if most of its body genuinely can't be safety-checked. For specific operations that need to escape — variadic calls like `printf`, raw pointer arithmetic, FFI, pointer conversions requiring casts — wrap ONLY those operations in `_Unsafe { ... }` blocks inside the `_Safe` function.
+
+**`_Unsafe` is contagious.** An `_Unsafe` function forces every caller to also be in `_Unsafe` context, and the cost spreads through the codebase. Keeping the interface `_Safe` lets the borrow checker help callers, even when the implementation has some escape hatches inside.
+
+```c
+// GOOD — interface is _Safe, only the one unsafe operation is wrapped
+_Safe void log_value(const int *_Borrow v) {
+    _Unsafe { printf("%d\n", *v); }     // printf is variadic, needs _Unsafe
+}
+
+// BAD — whole function is _Unsafe just for one line
+_Unsafe void log_value(const int *_Borrow v) {
+    printf("%d\n", *v);                  // forces every caller to be _Unsafe too
+}
+```
+
+See `/bsc-safe-zone` for the full list of `_Safe`-zone restrictions and legitimate uses of `_Unsafe` blocks.
+
 ### Step 3: Analyze Ownership (THE CRITICAL STEP)
 
 For every pointer in the codebase, classify it into one of three categories:
