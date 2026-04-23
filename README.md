@@ -35,14 +35,14 @@ bash install.sh -a all       # All of the above
 
 ### What gets installed
 
-| Tool | Where | Format |
-|------|-------|--------|
-| **Claude Code** | `.claude/commands/` + `CLAUDE.md` | Skills as commands + always-loaded syntax rules |
-| **Cursor** | `.cursorrules` | All skills with CRITICAL rules header |
-| **Windsurf** | `.windsurfrules` | All skills with CRITICAL rules header |
-| **OpenCode** | `.opencode/skills/<skill>/SKILL.md` | One skill per directory (native format) |
-| **Copilot** | `.github/copilot-instructions.md` | All skills with CRITICAL rules header |
-| **Codex** | `AGENTS.md` | All skills with CRITICAL rules header |
+| Tool | Where | How it works |
+|------|-------|--------------|
+| **Claude Code** | `.claude/skills/` + `.claude/agents/` + `CLAUDE.md` | Skills auto-invoke based on context; agents run on demand; CLAUDE.md loads BSC syntax rules on every session |
+| **Cursor** | `.cursorrules` | All skills concatenated with critical rules header |
+| **Windsurf** | `.windsurfrules` | All skills concatenated with critical rules header |
+| **OpenCode** | `.opencode/skills/<skill>/SKILL.md` | One skill per directory (native format, auto-triggers) |
+| **Copilot** | `.github/copilot-instructions.md` | All skills concatenated with critical rules header |
+| **Codex** | `AGENTS.md` | All skills concatenated with critical rules header |
 
 ### Uninstall
 
@@ -54,12 +54,21 @@ bash install.sh --uninstall /path/to/your/project
 
 ### Claude Code (CLI or VSCode)
 
+Skills auto-invoke when you're working on relevant BSC code — no explicit invocation needed in most cases. You can also load them explicitly:
+
 ```
-> /bsc-overview
-> /bsc-trait Write a program with dynamic dispatch using _Trait
-> /bsc-ownership Create a linked list with _Owned pointers
-> /bsc-common-mistakes Fix my code that uses & in a _Safe zone
+/bsc-design          ← load BEFORE planning any non-trivial BSC change
+/c-to-bsc            ← load BEFORE translating C code to BSC
+/bsc-lsp             ← load to inspect ownership flow via clangd hover
+/bsc-ownership       ← move semantics, _Owned structs, destructors
+/bsc-borrowing       ← _Borrow, &_Const, &_Mut, lifetime rules
+/bsc-safe-zone       ← _Safe/_Unsafe restrictions and patterns
 ```
+
+Two planning agents are also available via the Agent tool (the main agent delegates to them automatically per `CLAUDE.md`):
+
+- **`bsc-planner`** — researches ownership flow across `.cbs` files and returns a plan before non-trivial changes
+- **`bsc-learn`** — reviews a completed session's git diff and proposes skill improvements for approval
 
 ### Cursor / Windsurf / Copilot / Codex
 
@@ -69,23 +78,37 @@ Skills are automatically loaded as project context. Just write BSC code — the 
 
 Skills auto-trigger based on their description field. When you ask about ownership, the `bsc-ownership` Skill is automatically referenced.
 
-## Available Skills (13)
+## Available Skills (20)
 
-| Skill | When triggered | Description |
-|-------|---------------|-------------|
+| Skill | Triggers on | Description |
+|-------|-------------|-------------|
 | `bsc-overview` | BSC basics, file types, features | Language overview and syntax summary |
-| `bsc-member-function` | `TypeName::method`, `this`, `This` | Methods on structs, primitives, static methods |
+| `bsc-design` | New APIs, structs, ownership flow design, `_Safe`/`_Unsafe` boundary | Design rules for BSC-first APIs — load at planning time |
+| `bsc-ownership` | `_Owned`, destructor, RAII, move semantics | Owned pointers, owned structs, safe_malloc/safe_free |
+| `bsc-borrowing` | `_Borrow`, `&_Const`, `&_Mut` | Immutable/mutable borrows, lifetime rules, NLL |
+| `bsc-safe-zone` | `_Safe`, `_Unsafe`, safe zone errors | Safe zone restrictions, pointer conversion matrix, unsafe escape |
+| `bsc-nullability` | `_Nullable`, `_Nonnull`, null checks | Compile-time nullability tracking, null-check patterns |
+| `bsc-member-function` | `TypeName::method`, `this`, `This` | Methods on structs and primitives, static methods |
+| `bsc-trait` | `_Trait`, `_Impl`, dynamic dispatch | Trait definition, implementation, trait pointers |
 | `bsc-generic` | `<T>`, generic struct, constant generic | Generic functions, structs, type aliases, deduction |
-| `bsc-trait` | `_Trait`, `_Impl`, trait pointer | Trait definition, implementation, dynamic dispatch |
-| `bsc-ownership` | `_Owned`, destructor, RAII | Move semantics, owned pointers, owned structs |
-| `bsc-borrowing` | `_Borrow`, `&_Const`, `&_Mut` | Immutable/mutable borrows, lifetime rules |
-| `bsc-safe-zone` | `_Safe`, `_Unsafe` | Safe zone restrictions, unsafe escape |
-| `bsc-coroutine` | `_Async`, `_Await`, `Future` | Stackless coroutines, poll/free |
+| `bsc-operator-overloading` | `operator`, `[]`, `->`, `+`, `==` | Operator overloading via `__attribute__((operator OP))` |
+| `bsc-coroutine` | `_Async`, `_Await`, `Future`, `Scheduler` | Stackless coroutines, poll/free, concurrent tasks |
 | `bsc-constexpr` | `constexpr`, `if constexpr`, type traits | Compile-time evaluation, type-specialized branches |
-| `bsc-stdlib` | `Vec<T>`, `String`, `Option` | Standard library types and APIs |
-| `bsc-compile` | compiler flags, `-fsyntax-only` | Compilation, include paths, diagnostic flags |
-| `bsc-errors` | `BSC-Exxxx`, error codes | Error code reference, diagnostic hierarchy |
-| `bsc-common-mistakes` | compilation errors, pitfalls | Common mistakes with wrong/right examples |
+| `bsc-initialization` | Uninitialized variables, `ensure_init` | Field-level init tracking, `-uninit-check` |
+| `bsc-stdlib` | `Vec<T>`, `String`, `Option`, `Result` | Standard library core types and APIs |
+| `bsc-stdlib-advanced` | `Rc<T>`, `Weak<T>`, `RefCell<T>`, `HashMap` | Advanced stdlib: shared ownership, interior mutability |
+| `bsc-lsp` | Ownership flow, live ranges, clangd hover | BSC-aware clangd: hover events, known limitations, Grep fallback |
+| `bsc-compile` | Compiler flags, `-fsyntax-only`, include paths | Compilation, diagnostics, source-to-source rewriting |
+| `bsc-errors` | `BSC-Exxxx`, error codes | Error code reference and fix strategies |
+| `bsc-common-mistakes` | Compilation errors, pitfalls | Common mistakes with wrong/right examples |
+| `c-to-bsc` | Translating C to BSC, ownership annotations | Step-by-step C→BSC translation — load before starting |
+
+## Agents (Claude Code only)
+
+| Agent | When used | What it does |
+|-------|-----------|--------------|
+| `bsc-planner` | Before non-trivial BSC changes | Reads `.cbs` files, traces ownership flow, returns a plan. Read-only. |
+| `bsc-learn` | After a BSC coding session | Reads the session's git diff and existing skills, proposes skill improvements for approval. Read-only. |
 
 ## Error Reference
 
@@ -104,18 +127,28 @@ BiShengCSkills/
 ├── README.md
 ├── skills/
 │   ├── bsc-overview/SKILL.md
-│   ├── member-function/SKILL.md
-│   ├── generic/SKILL.md
-│   ├── trait/SKILL.md
-│   ├── ownership/SKILL.md
-│   ├── borrowing/SKILL.md
-│   ├── safe-zone/SKILL.md
-│   ├── coroutine/SKILL.md
-│   ├── constexpr/SKILL.md
-│   ├── stdlib/SKILL.md
-│   ├── compile/SKILL.md
-│   ├── errors/SKILL.md
-│   └── common-mistakes/SKILL.md
+│   ├── bsc-design/SKILL.md
+│   ├── bsc-ownership/SKILL.md
+│   ├── bsc-borrowing/SKILL.md
+│   ├── bsc-safe-zone/SKILL.md
+│   ├── bsc-nullability/SKILL.md
+│   ├── bsc-member-function/SKILL.md
+│   ├── bsc-trait/SKILL.md
+│   ├── bsc-generic/SKILL.md
+│   ├── bsc-operator-overloading/SKILL.md
+│   ├── bsc-coroutine/SKILL.md
+│   ├── bsc-constexpr/SKILL.md
+│   ├── bsc-initialization/SKILL.md
+│   ├── bsc-stdlib/SKILL.md
+│   ├── bsc-stdlib-advanced/SKILL.md
+│   ├── bsc-lsp/SKILL.md
+│   ├── bsc-compile/SKILL.md
+│   ├── bsc-errors/SKILL.md
+│   ├── bsc-common-mistakes/SKILL.md
+│   └── c-to-bsc/SKILL.md
+├── agents/
+│   ├── bsc-planner.md                  ← planning agent (Claude Code)
+│   └── bsc-learn.md                    ← session-learning agent (Claude Code)
 └── errors/
     ├── README.md
     ├── ownership.md, borrow.md, ...
@@ -148,4 +181,5 @@ description: "BiSheng C <feature>. When you need to understand <topics>, use thi
 ...
 ```
 
-3. Submit a Pull Request
+3. To add an agent, create `agents/<name>.md` with frontmatter: `name`, `description`, `tools`, `model`.
+4. Submit a Pull Request
