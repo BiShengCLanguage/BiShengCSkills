@@ -7,7 +7,7 @@ description: "BiSheng C translation from C. When you need to translate/convert/p
 
 ## MANDATORY: Read This Before Any C-to-BSC Translation
 
-If you are translating C code to BSC, you MUST follow this process. Changing file extensions and stripping platform code is NOT a translation — you must analyze every pointer and add BSC ownership annotations where applicable.
+If you are translating C code to BSC, you MUST follow this process. **The fundamental rule is: keep the file structure as-is, only ADD ownership annotations.** Do NOT rename `.c`/`.h` → `.cbs`/`.hbs`; do NOT strip platform-specific code. Compile with `clang -x bsc file.c`. A translation is about analyzing every pointer and adding BSC annotations — not about restructuring the codebase.
 
 **MINIMUM BAR**: A valid BSC translation of any non-trivial C project MUST contain `_Owned` annotations. Any C code that calls `malloc`/`free` has ownership semantics that MUST be expressed in BSC. If your translation has zero `_Owned` annotations, it is incomplete — go back to Step 3 and re-analyze. "The code is too complex for ownership" is NOT a valid reason to skip annotations; use `_Unsafe` blocks for the complex parts and annotate what you can.
 
@@ -30,18 +30,28 @@ cJSON *_Owned item = safe_malloc<cJSON>((cJSON){0});
 
 ## Translation Process
 
-### Step 1: Rename Files (or use `-x bsc`)
-- Default: `.c` → `.cbs`, `.h` → `.hbs`, update all `#include` directives accordingly
-- **Alternative**: keep `.c`/`.h` extensions and pass `-x bsc` (or equivalently `-xbsc`, no space) to clang. Both forms work at both the driver and `-cc1` levels. The compiler treats the input as BSC regardless of extension: `clang -x bsc file.c -o output`.
-- **When to keep `.c`/`.h`**: incremental migration of a large codebase where you want to compile some files as BSC and others as C without renaming everything; keeping compatibility with external C tooling that matches on extension.
-- **When to rename**: greenfield BSC project, or when you're committing fully to BSC and want LSP/editors to recognize the file as BSC automatically (most tooling keys off `.cbs`/`.hbs`).
+### Step 1: Keep the File Structure — Don't Rename, Don't Strip (Fundamental Rule)
 
-### Step 2: Strip Platform-Specific Code
-- Remove `#ifdef _WIN32` / `__GNUC__` / `_MSC_VER` blocks
-- Remove `__declspec(dllexport/dllimport)`
-- Remove `__cdecl` / `__stdcall` calling conventions
-- Remove `#ifdef __cplusplus extern "C"` guards
-- Replace visibility macros (e.g. `MYLIB_PUBLIC(type)`) with plain `type`
+**Rule of thumb: change the C codebase as little as possible.** Only ADD BSC ownership annotations. Leave everything else — filenames, preprocessor conditionals, calling conventions, DLL markers, visibility macros — untouched.
+
+**Do NOT rename `.c` → `.cbs` or `.h` → `.hbs`.** Keep the original extensions and compile with `clang -x bsc file.c` (or `-xbsc`, both forms work at both driver and `-cc1`). The BSC compiler treats the input as BSC regardless of extension.
+
+**Do NOT strip platform-specific code.** BSC is built on clang, which handles all of these:
+
+| Construct | Behavior in BSC |
+|---|---|
+| `#ifdef _WIN32` / `__GNUC__` / `_MSC_VER` | Preprocessor resolves based on target platform; inactive branches are dead code. Harmless. |
+| `__declspec(dllexport/dllimport)` | Clang accepts on non-Windows targets (no-op or warning). Harmless. |
+| `__cdecl` / `__stdcall` | Clang silently ignores on non-x86-Windows. Harmless. |
+| `#ifdef __cplusplus extern "C"` guards | `__cplusplus` is NOT defined in BSC compilation; the guarded block is skipped by the preprocessor. Harmless. |
+| `MYLIB_PUBLIC(type)` / other visibility macros | Left in place; they expand to whatever they currently expand to. Harmless. |
+
+**Why this rule:**
+- **Incremental migration** — the project can still build as plain C if the BSC work pauses. Two-mode builds (C and BSC from same sources) are common during long migrations.
+- **Minimal diff** — reviewers see only ownership annotations, not cross-platform churn.
+- **Cross-platform preserved** — if Windows builds come back later, the platform code is still there.
+
+Skip this step only if you have a concrete compiler error caused by a specific construct (rare). Otherwise: leave the existing structure alone and move to Step 3.
 
 ### Step 3: Analyze Ownership (THE CRITICAL STEP)
 
@@ -1178,10 +1188,10 @@ use-after-move hazard in `_Unsafe`. Pick Option A or B.
 
 ## Checklist — Verify Before Done
 
-- [ ] All files renamed `.c`→`.cbs`, `.h`→`.hbs`
-- [ ] All `#include` paths updated
-- [ ] `#include "bishengc_safety.hbs"` added where safe_malloc/safe_free are used
-- [ ] Platform-specific code stripped
+- [ ] File extensions KEPT as `.c`/`.h` — compile with `clang -x bsc file.c` (do NOT rename)
+- [ ] `#include` paths unchanged — headers still reference `.h`, not `.hbs`
+- [ ] `#include "bishengc_safety.hbs"` added where safe_malloc/safe_free are used (this is the one new include)
+- [ ] Platform-specific code LEFT IN PLACE — `#ifdef _WIN32`, `__declspec`, `__cdecl`, `extern "C"` guards all stay; BSC clang handles them
 - [ ] **Every pointer analyzed** — classified as owned, borrowed, or raw
 - [ ] **Owned struct fields** annotated `*_Owned`
 - [ ] **Borrowed struct fields** annotated `*_Borrow`

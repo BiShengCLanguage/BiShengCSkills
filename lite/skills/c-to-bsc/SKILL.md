@@ -5,25 +5,17 @@ description: "BiSheng C translation from C. When you translate C code to BSC, ad
 
 # C to BSC Translation (Lite — Keep `.c`/`.h` Extensions)
 
-## Core Approach
+## Core Approach — Keep the File Structure, Only Add Annotations
 
-In this workflow, you **keep `.c` and `.h` file extensions**. You do NOT rename files. The compiler treats them as BSC because you pass `-x bsc`:
+**Fundamental rule: change the C codebase as little as possible.** Only ADD BSC ownership annotations. Do NOT restructure, rename, or strip anything.
 
-```bash
-clang -x bsc file.c -o output
-clang -x bsc file.c -fsyntax-only      # just check, no binary
-```
+- **Keep `.c` and `.h` file extensions.** Do NOT rename. Compile with `clang -x bsc file.c -o output` (or `-xbsc`, both work).
+- **Keep all platform-specific code in place** — `#ifdef _WIN32`, `__declspec(...)`, `__cdecl`, `__stdcall`, `extern "C"` guards. BSC is clang-based and handles all of these; removing them is churn that risks breaking cross-platform builds for no benefit.
+- **Keep `#include` paths unchanged.** Headers still reference `.h`, not `.hbs`. The only new include is `#include "bishengc_safety.hbs"` wherever you use `safe_malloc`/`safe_free`.
 
-No `#include` changes needed — `.c` files can still include `.h` files.
+Why: this lets your project build as plain C AND as BSC from the same sources during an incremental migration, and keeps review diffs focused on the ownership work.
 
-## Step 1: Strip Platform-Specific Code
-
-- Remove `#ifdef _WIN32` / `__GNUC__` / `_MSC_VER` blocks
-- Remove `__declspec(dllexport/dllimport)`
-- Remove `__cdecl` / `__stdcall` calling conventions
-- Remove `#ifdef __cplusplus extern "C"` guards
-
-## Step 2: Classify Every Pointer
+## Step 1: Classify Every Pointer
 
 For every pointer in the code, decide which category it belongs in:
 
@@ -35,7 +27,7 @@ For every pointer in the code, decide which category it belongs in:
 
 **Rule of thumb**: if a pointer touches `malloc`/`free`, it is almost always Category A.
 
-## Step 3: Replace `malloc`/`free`
+## Step 2: Replace `malloc`/`free`
 
 ```c
 // BEFORE (C)
@@ -63,7 +55,7 @@ _Unsafe {
 
 Going the other way — `_Owned` → raw — uses `__move_to_raw(p)` (transfers ownership out; `p` becomes unusable) or `(T *)&_Mut *p` (just borrows, `p` keeps ownership).
 
-## Step 4: Annotate Struct Fields
+## Step 3: Annotate Struct Fields
 
 **Rule**: the struct's cleanup/delete function is the source of truth. If cleanup frees `field` → mark `_Owned`. If it doesn't → leave plain (raw pointer) or use a value type.
 
@@ -85,7 +77,7 @@ typedef struct Token {
 
 **`_Borrow` as a struct field is heavily restricted** in BSC — the `_Borrow` field can't borrow from the containing struct or its other members, and a struct containing a `_Borrow` can't itself be borrowed. For back-references (linked lists, trees, graphs with parent pointers), **do NOT** use `_Borrow` — use raw pointers and wrap access in `_Unsafe`. The stdlib `LinkedList<T>` uses raw pointers for this reason.
 
-## Step 5: Annotate Function Signatures
+## Step 4: Annotate Function Signatures
 
 **Function takes a value it will free** → `_Owned` parameter:
 ```c
@@ -107,7 +99,7 @@ void container_clear(Container *_Borrow c);
 Node *_Owned create_node(void);
 ```
 
-## Step 6: Convert `&` to `&_Const` / `&_Mut` in `_Safe` Functions
+## Step 5: Convert `&` to `&_Const` / `&_Mut` in `_Safe` Functions
 
 In `_Safe` functions, plain `&` is forbidden:
 
@@ -129,7 +121,7 @@ _Safe void caller(void) {
 
 Use `&_Const x` when the target is read-only, `&_Mut x` when the target is written.
 
-## Step 7: `_Owned` Pointers With Null
+## Step 6: `_Owned` Pointers With Null
 
 If an `_Owned` pointer can ever be null (init to `nullptr`, error path), add `_Nullable`:
 
@@ -147,7 +139,7 @@ safe_free((void *_Nullable _Owned)item);   // safe for nullable
 
 Use `nullptr` instead of `NULL` in BSC code.
 
-## Step 8: Compile
+## Step 7: Compile
 
 ```bash
 clang -x bsc file.c -fsyntax-only
@@ -164,8 +156,9 @@ Fix errors iteratively. The most common errors:
 ## Checklist
 
 - [ ] Kept `.c`/`.h` extensions; compile with `clang -x bsc file.c`
-- [ ] Removed platform-specific `#ifdef` blocks
-- [ ] `#include "bishengc_safety.hbs"` added
+- [ ] Platform-specific code (`#ifdef _WIN32`, `__declspec`, etc.) LEFT IN PLACE — BSC clang handles it
+- [ ] `#include` paths unchanged (still reference `.h`)
+- [ ] `#include "bishengc_safety.hbs"` added where safe_malloc/safe_free are used
 - [ ] Every pointer classified: `_Owned`, `_Borrow`, or raw
 - [ ] Struct fields annotated based on whether the cleanup function frees them
 - [ ] Function parameters and returns annotated
