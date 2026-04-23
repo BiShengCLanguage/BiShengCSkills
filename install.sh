@@ -331,6 +331,18 @@ known clangd limitations, fallback-to-Grep rules), load `/bsc-lsp`.
 ## When to Delegate to the `bsc-planner` Agent
 
 Use the `bsc-planner` subagent (via the Agent tool) when planning a non-trivial BSC change that requires reading many `.cbs` files to understand ownership flow — refactors, new APIs, cross-module impact analysis, anything that would burn main context. The agent is read-only and returns a plan; the main thread implements. Do NOT delegate for single-file edits, typo fixes, or borrow-checker errors on a known function — handle those directly.
+
+## When to Invoke `bsc-learn` (At Session End)
+
+After a non-trivial BSC coding session — any session where you modified or created `.cbs`/`.hbs` files, hit borrow-checker or ownership errors, translated C to BSC, or debugged destructor/move semantics — invoke `bsc-learn` via the Agent tool.
+
+Pass it:
+1. A brief summary of the main issues you encountered (what the checker rejected, what took iteration, what was surprising).
+2. The git commit range covering this session (e.g. `HEAD~3..HEAD` or specific SHAs).
+
+The agent reads the diff and the existing skill files, then returns proposed skill improvements as text. Present the proposals to the user for approval before applying any edits. Do NOT apply edits autonomously.
+
+Skip `bsc-learn` for: sessions with only comment edits, single-line typo fixes, or no `.cbs` changes.
 CLAUDE_EOF
     fi
 
