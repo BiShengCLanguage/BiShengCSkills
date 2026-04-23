@@ -181,39 +181,13 @@ strip_frontmatter() {
     sed '1,/^---$/d' "$1"
 }
 
-# --- Install: Claude Code ---
-install_claude() {
-    local skills_dst="$TARGET/.claude/skills"
-    mkdir -p "$skills_dst"
-    local count=0
-
-    for skill_dir in "$SKILLS_DIR"/*/; do
-        name="$(basename "$skill_dir")"
-        src="$skill_dir/SKILL.md"
-        [ -f "$src" ] || continue
-
-        mkdir -p "$skills_dst/$name"
-        cp "$src" "$skills_dst/$name/SKILL.md"
-        count=$((count + 1))
-    done
-
-    # Agents (read-only planning helpers; subagents don't inherit skills, so
-    # their BSC knowledge is embedded in the agent file itself).
-    local agents_dst="$TARGET/.claude/agents"
-    local agent_count=0
-    if [ -d "$AGENTS_DIR" ]; then
-        mkdir -p "$agents_dst"
-        for agent_file in "$AGENTS_DIR"/*.md; do
-            [ -f "$agent_file" ] || continue
-            cp "$agent_file" "$agents_dst/"
-            agent_count=$((agent_count + 1))
-        done
+# --- Helper: write always-loaded BSC rules to a target file (CLAUDE.md / AGENTS.md) ---
+write_always_loaded_rules() {
+    local target_file="$1"
+    if [ -f "$target_file" ] && grep -q "BiSheng C" "$target_file" 2>/dev/null; then
+        return
     fi
-
-    # Install CLAUDE.md with syntax rules (always-loaded context)
-    local claude_md="$TARGET/CLAUDE.md"
-    if [ ! -f "$claude_md" ] || ! grep -q "BiSheng C" "$claude_md" 2>/dev/null; then
-        cat >> "$claude_md" << 'CLAUDE_EOF'
+    cat >> "$target_file" << 'RULES_EOF'
 
 # Working Principles
 
@@ -316,6 +290,16 @@ rewrite to `T *_Owned`. The pattern is ALWAYS `T *_Owned`.
 - Prefer `safe_malloc<T>(val)` (returns `T *_Owned`, no cast) and `safe_free((void *_Owned)p)`
 - Raw `malloc`/`free` require `_Unsafe` context and `(T *_Owned)` cast
 
+## Code Verification
+
+After writing or editing any `.cbs` or `.hbs` file, run:
+
+```bash
+clang <file> -fsyntax-only
+```
+
+Fix all compiler errors before reporting the task complete.
+
 ## LSP — Use Proactively
 
 BSC-aware clangd exposes ownership flow and live ranges. Before non-trivial changes to
@@ -327,6 +311,43 @@ known clangd limitations, fallback-to-Grep rules), load `/bsc-lsp`.
 
 - Non-trivial BSC change (new struct, new `_Owned`/`_Borrow` signature, refactor crossing ownership timelines, `_Safe`/`_Unsafe` boundary decision) → load `/bsc-design` BEFORE planning.
 - Translating/porting C to BSC → load `/c-to-bsc` BEFORE starting. Changing file extensions alone is NOT a translation.
+RULES_EOF
+}
+
+# --- Install: Claude Code ---
+install_claude() {
+    local skills_dst="$TARGET/.claude/skills"
+    mkdir -p "$skills_dst"
+    local count=0
+
+    for skill_dir in "$SKILLS_DIR"/*/; do
+        name="$(basename "$skill_dir")"
+        src="$skill_dir/SKILL.md"
+        [ -f "$src" ] || continue
+
+        mkdir -p "$skills_dst/$name"
+        cp "$src" "$skills_dst/$name/SKILL.md"
+        count=$((count + 1))
+    done
+
+    # Agents (read-only planning helpers; subagents don't inherit skills, so
+    # their BSC knowledge is embedded in the agent file itself).
+    local agents_dst="$TARGET/.claude/agents"
+    local agent_count=0
+    if [ -d "$AGENTS_DIR" ]; then
+        mkdir -p "$agents_dst"
+        for agent_file in "$AGENTS_DIR"/*.md; do
+            [ -f "$agent_file" ] || continue
+            cp "$agent_file" "$agents_dst/"
+            agent_count=$((agent_count + 1))
+        done
+    fi
+
+    # Install CLAUDE.md with always-loaded BSC rules (shared) + Claude-specific agent sections
+    local claude_md="$TARGET/CLAUDE.md"
+    write_always_loaded_rules "$claude_md"
+    if ! grep -q "bsc-planner" "$claude_md" 2>/dev/null; then
+        cat >> "$claude_md" << 'CLAUDE_EXTRA_EOF'
 
 ## When to Delegate to the `bsc-planner` Agent
 
@@ -343,7 +364,7 @@ Pass it:
 The agent reads the diff and the existing skill files, then returns proposed skill improvements as text. Present the proposals to the user for approval before applying any edits. Do NOT apply edits autonomously.
 
 Skip `bsc-learn` for: sessions with only comment edits, single-line typo fixes, or no `.cbs` changes.
-CLAUDE_EOF
+CLAUDE_EXTRA_EOF
     fi
 
     echo "  Claude Code: installed $count skills to .claude/skills/"
@@ -384,7 +405,11 @@ install_opencode() {
         count=$((count + 1))
     done
 
+    # Install AGENTS.md with always-loaded BSC rules (same content as CLAUDE.md)
+    write_always_loaded_rules "$TARGET/AGENTS.md"
+
     echo "  OpenCode: installed $count skills to .opencode/skills/"
+    echo "  OpenCode: added BSC rules to AGENTS.md"
 }
 
 # --- Install: Copilot ---
