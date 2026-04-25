@@ -452,37 +452,53 @@ CLAUDE_EXTRA_EOF
     echo "    Skills auto-invoke on relevant context; also invokable as /bsc-overview, /bsc-design, etc."
 }
 
-# --- Install: Claude Code (global plugin) ---
-# Installs the repo as a Claude Code plugin under ~/.claude/plugins/bisheng-c-skills/
-# (skills + agents + logging hook), then writes CLAUDE.md for the current project
-# with a compile-command prompt and an optional clangd path prompt.
+# --- Install: Claude Code (global plugin via the official CLI) ---
+# Registers the BSC marketplace and installs bisheng-c-skills@bsc through
+# `claude plugin marketplace add` + `claude plugin install`. This places the
+# plugin in Claude Code's registry so it shows up in /plugin and gets normal
+# update/uninstall handling.
 #
-# Run from inside your project directory. If you run it elsewhere, the per-project
-# CLAUDE.md will be written wherever $TARGET points — that's on you.
+# Then writes per-project CLAUDE.md and prompts for compile command + optional
+# clangd path. Run from inside your project directory.
 install_claude_plugin() {
-    local plugin_root="${BSC_PLUGIN_ROOT:-$HOME/.claude/plugins/bisheng-c-skills}"
-    local plugin_src="$SCRIPT_DIR"
+    local marketplace_url="${BSC_MARKETPLACE_URL:-https://gitee.com/bisheng_c_language_dep/BiShengCSkills}"
+    local marketplace_name="bsc"
+    local plugin_id="bisheng-c-skills@${marketplace_name}"
 
-    # 1. Install the plugin globally. Copy the repo (skills, agents, hooks,
-    # scripts, .claude-plugin) into the user's plugin directory.
-    echo "  Claude plugin: installing to $plugin_root"
-    mkdir -p "$plugin_root"
+    if ! command -v claude >/dev/null 2>&1; then
+        echo "ERROR: 'claude' CLI not found on PATH." >&2
+        echo "  Install Claude Code first (https://docs.claude.com/en/docs/claude-code)," >&2
+        echo "  then re-run:  bash install.sh -a claude-plugin" >&2
+        exit 1
+    fi
 
-    # Copy the pieces the plugin loader cares about. Avoid copying the whole
-    # repo — no need to ship .git, errors/, lite/, wiki/, README, etc.
-    rm -rf "$plugin_root/.claude-plugin" "$plugin_root/skills" "$plugin_root/agents" "$plugin_root/hooks" "$plugin_root/scripts"
-    cp -r "$plugin_src/.claude-plugin" "$plugin_root/"
-    cp -r "$plugin_src/skills"         "$plugin_root/"
-    [ -d "$plugin_src/agents" ]  && cp -r "$plugin_src/agents"  "$plugin_root/"
-    cp -r "$plugin_src/hooks"          "$plugin_root/"
-    cp -r "$plugin_src/scripts"        "$plugin_root/"
-    chmod +x "$plugin_root/scripts/"*.sh 2>/dev/null || true
+    # Clean up any orphaned manual install from earlier installer versions.
+    local orphan="$HOME/.claude/plugins/bisheng-c-skills"
+    if [ -d "$orphan" ] && [ ! -L "$orphan" ]; then
+        echo "  Claude plugin: removing orphaned manual install at $orphan"
+        rm -rf "$orphan"
+    fi
 
-    local n_skills=0
-    [ -d "$plugin_root/skills" ] && n_skills=$(find "$plugin_root/skills" -mindepth 1 -maxdepth 1 -type d | wc -l)
-    local n_agents=0
-    [ -d "$plugin_root/agents" ] && n_agents=$(find "$plugin_root/agents" -maxdepth 1 -name '*.md' | wc -l)
-    echo "  Claude plugin: $n_skills skills, $n_agents agents, logging hook installed"
+    # Register the marketplace (idempotent — adding the same URL twice is fine).
+    echo "  Claude plugin: adding marketplace 'bsc' from $marketplace_url"
+    claude plugin marketplace add "$marketplace_url" 2>&1 | sed 's/^/    /' || {
+        echo "ERROR: 'claude plugin marketplace add' failed." >&2
+        exit 1
+    }
+
+    # Install (or update) the plugin from that marketplace.
+    echo "  Claude plugin: installing $plugin_id"
+    claude plugin install "$plugin_id" 2>&1 | sed 's/^/    /' || {
+        echo "ERROR: 'claude plugin install $plugin_id' failed." >&2
+        exit 1
+    }
+
+    # Plugin root is wherever the CLI placed it. We find it for the clangd-config
+    # write below; if we can't locate it, we fall back to the legacy path.
+    local plugin_root
+    plugin_root="$(find "$HOME/.claude/plugins/cache/$marketplace_name" -mindepth 2 -maxdepth 2 -type d -name 'bisheng-c-skills*' 2>/dev/null | head -1)"
+    [ -z "$plugin_root" ] && plugin_root="$HOME/.claude/plugins/bisheng-c-skills"
+
     echo "  Claude plugin: BSC skill loads and BSC agent invocations log to ~/.claude/bsc-usage.log"
 
     # 2. Per-project CLAUDE.md (existing behavior, reused). Prompts for compile
