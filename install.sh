@@ -463,12 +463,10 @@ CLAUDE_EXTRA_EOF
 install_claude_plugin() {
     local marketplace_name="bsc"
     local plugin_id="bisheng-c-skills@${marketplace_name}"
-    # Use the local clone as the marketplace source. The installer's bootstrap
-    # has already cloned the repo to $SCRIPT_DIR (or it lives at the user's own
-    # checkout). `claude plugin marketplace add <directory>` reads
-    # .claude-plugin/marketplace.json from that path. Using a directory
-    # avoids gitee-vs-github URL gymnastics — works regardless of host.
-    local marketplace_source="${BSC_MARKETPLACE_SOURCE:-$SCRIPT_DIR}"
+    # The marketplace source must live somewhere stable across reboots.
+    # /tmp gets wiped, $SCRIPT_DIR may be /tmp/BiShengCSkills under curl-pipe,
+    # so we sync into ~/.local/share/bisheng-c-skills (override via env).
+    local stable_source="${BSC_PLUGIN_SOURCE:-$HOME/.local/share/bisheng-c-skills}"
 
     if ! command -v claude >/dev/null 2>&1; then
         echo "ERROR: 'claude' CLI not found on PATH." >&2
@@ -477,9 +475,35 @@ install_claude_plugin() {
         exit 1
     fi
 
-    if [ ! -f "$marketplace_source/.claude-plugin/marketplace.json" ]; then
-        echo "ERROR: $marketplace_source/.claude-plugin/marketplace.json not found." >&2
+    if [ ! -f "$SCRIPT_DIR/.claude-plugin/marketplace.json" ]; then
+        echo "ERROR: $SCRIPT_DIR/.claude-plugin/marketplace.json not found." >&2
         echo "  Re-run the curl-pipe installer, or run from a fresh clone." >&2
+        exit 1
+    fi
+
+    # Sync the repo into the stable location. Prefer git pull if it's already
+    # a working tree we control; otherwise mirror $SCRIPT_DIR with rsync/cp.
+    echo "  Claude plugin: syncing source to $stable_source"
+    mkdir -p "$(dirname "$stable_source")"
+    if [ -d "$stable_source/.git" ]; then
+        git -C "$stable_source" fetch --quiet origin 2>/dev/null || true
+        git -C "$stable_source" reset --hard origin/master --quiet 2>/dev/null \
+            || git -C "$stable_source" pull --quiet 2>/dev/null \
+            || true
+    elif [ -d "$SCRIPT_DIR/.git" ]; then
+        # Cloning from $SCRIPT_DIR (a local clone) gives the same content
+        # without re-hitting the network.
+        rm -rf "$stable_source"
+        git clone --quiet "$SCRIPT_DIR" "$stable_source" 2>/dev/null \
+            || cp -a "$SCRIPT_DIR" "$stable_source"
+    else
+        # No git anywhere — straight copy. Preserves modes (executable bits).
+        rm -rf "$stable_source"
+        cp -a "$SCRIPT_DIR" "$stable_source"
+    fi
+
+    if [ ! -f "$stable_source/.claude-plugin/marketplace.json" ]; then
+        echo "ERROR: sync failed — $stable_source has no marketplace.json" >&2
         exit 1
     fi
 
@@ -490,17 +514,17 @@ install_claude_plugin() {
         rm -rf "$orphan"
     fi
 
-    # If the marketplace 'bsc' is already registered, remove it first so we
-    # pick up changes (e.g. updated plugin list, new version). 'add' refuses
-    # to overwrite an existing marketplace of the same name.
+    # If the marketplace 'bsc' is already registered (possibly pointing at
+    # a stale path like /tmp/BiShengCSkills from an older installer run),
+    # remove it so we can re-register against $stable_source.
     if claude plugin marketplace list 2>/dev/null | grep -q '^[[:space:]]*bsc\b'; then
         echo "  Claude plugin: refreshing existing marketplace 'bsc'"
         claude plugin marketplace remove bsc >/dev/null 2>&1 || true
     fi
 
-    # Register the marketplace from the local clone.
-    echo "  Claude plugin: adding marketplace 'bsc' from $marketplace_source"
-    claude plugin marketplace add "$marketplace_source" 2>&1 | sed 's/^/    /' || {
+    # Register the marketplace from the stable source.
+    echo "  Claude plugin: adding marketplace 'bsc' from $stable_source"
+    claude plugin marketplace add "$stable_source" 2>&1 | sed 's/^/    /' || {
         echo "ERROR: 'claude plugin marketplace add' failed." >&2
         exit 1
     }
@@ -679,11 +703,24 @@ if [ "$ACTION" = "uninstall" ]; then
         fi
     done
 
-    # Claude Code global plugin
+    # Claude Code global plugin (legacy manual install — pre-marketplace flow)
     plugin_root="${BSC_PLUGIN_ROOT:-$HOME/.claude/plugins/bisheng-c-skills}"
     if [ -d "$plugin_root" ]; then
         rm -rf "$plugin_root"
-        echo "  Removed Claude Code global plugin at $plugin_root"
+        echo "  Removed legacy plugin dir at $plugin_root"
+    fi
+
+    # Claude Code marketplace flow — uninstall plugin, drop marketplace, drop source
+    if command -v claude >/dev/null 2>&1; then
+        claude plugin uninstall bisheng-c-skills@bsc >/dev/null 2>&1 \
+            && echo "  Uninstalled bisheng-c-skills@bsc plugin"
+        claude plugin marketplace remove bsc >/dev/null 2>&1 \
+            && echo "  Removed marketplace 'bsc'"
+    fi
+    stable_source="${BSC_PLUGIN_SOURCE:-$HOME/.local/share/bisheng-c-skills}"
+    if [ -d "$stable_source" ]; then
+        rm -rf "$stable_source"
+        echo "  Removed marketplace source at $stable_source"
     fi
 
     echo "Done."
