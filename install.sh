@@ -19,12 +19,16 @@
 #   bash install.sh --list                   # list available skills
 #
 # Supported tools:
-#   claude    — Claude Code CLI / VSCode extension (.claude/skills/)
-#   cursor    — Cursor IDE (.cursorrules)
-#   windsurf  — Windsurf IDE (.windsurfrules)
-#   opencode  — OpenCode (.opencode/skills/)
-#   copilot   — GitHub Copilot (.github/copilot-instructions.md)
-#   codex     — OpenAI Codex CLI (AGENTS.md)
+#   claude         — Claude Code, per-project install (.claude/skills/)
+#   claude-plugin  — Claude Code, global plugin install (~/.claude/plugins/) + per-project CLAUDE.md
+#                    Run from inside your project directory. Prompts for compile command and
+#                    optional clangd path. Logs BSC skill loads and BSC agent invocations to
+#                    ~/.claude/bsc-usage.log (override with BSC_LOG_FILE).
+#   cursor         — Cursor IDE (.cursorrules)
+#   windsurf       — Windsurf IDE (.windsurfrules)
+#   opencode       — OpenCode (.opencode/skills/)
+#   copilot        — GitHub Copilot (.github/copilot-instructions.md)
+#   codex          — OpenAI Codex CLI (AGENTS.md)
 
 set -euo pipefail
 
@@ -85,11 +89,12 @@ TARGET="$(cd "$TARGET" && pwd)"
 if [ "$ACTION" = "help" ]; then
     echo "Usage: install.sh [-a adapter] [--lite] [--uninstall] [--list] [project_dir]"
     echo ""
-    echo "Adapters: claude, cursor, windsurf, opencode, copilot, codex, all"
+    echo "Adapters: claude, claude-plugin, cursor, windsurf, opencode, copilot, codex, all"
     echo ""
     echo "Examples:"
     echo "  bash install.sh                    # auto-detect tools, install to current dir"
-    echo "  bash install.sh -a claude          # Claude Code only"
+    echo "  bash install.sh -a claude          # Claude Code, per-project install"
+    echo "  bash install.sh -a claude-plugin   # Claude Code, global plugin + this project's CLAUDE.md"
     echo "  bash install.sh -a claude --lite   # Claude Code, 5 condensed skills for weaker models"
     echo "  bash install.sh -a cursor .        # Cursor rules in current dir"
     echo "  bash install.sh --list             # show all available skills"
@@ -447,6 +452,96 @@ CLAUDE_EXTRA_EOF
     echo "    Skills auto-invoke on relevant context; also invokable as /bsc-overview, /bsc-design, etc."
 }
 
+# --- Install: Claude Code (global plugin) ---
+# Installs the repo as a Claude Code plugin under ~/.claude/plugins/bisheng-c-skills/
+# (skills + agents + logging hook), then writes CLAUDE.md for the current project
+# with a compile-command prompt and an optional clangd path prompt.
+#
+# Run from inside your project directory. If you run it elsewhere, the per-project
+# CLAUDE.md will be written wherever $TARGET points — that's on you.
+install_claude_plugin() {
+    local plugin_root="${BSC_PLUGIN_ROOT:-$HOME/.claude/plugins/bisheng-c-skills}"
+    local plugin_src="$SCRIPT_DIR"
+
+    # 1. Install the plugin globally. Copy the repo (skills, agents, hooks,
+    # scripts, .claude-plugin) into the user's plugin directory.
+    echo "  Claude plugin: installing to $plugin_root"
+    mkdir -p "$plugin_root"
+
+    # Copy the pieces the plugin loader cares about. Avoid copying the whole
+    # repo — no need to ship .git, errors/, lite/, wiki/, README, etc.
+    rm -rf "$plugin_root/.claude-plugin" "$plugin_root/skills" "$plugin_root/agents" "$plugin_root/hooks" "$plugin_root/scripts"
+    cp -r "$plugin_src/.claude-plugin" "$plugin_root/"
+    cp -r "$plugin_src/skills"         "$plugin_root/"
+    [ -d "$plugin_src/agents" ]  && cp -r "$plugin_src/agents"  "$plugin_root/"
+    cp -r "$plugin_src/hooks"          "$plugin_root/"
+    cp -r "$plugin_src/scripts"        "$plugin_root/"
+    chmod +x "$plugin_root/scripts/"*.sh 2>/dev/null || true
+
+    local n_skills=0
+    [ -d "$plugin_root/skills" ] && n_skills=$(find "$plugin_root/skills" -mindepth 1 -maxdepth 1 -type d | wc -l)
+    local n_agents=0
+    [ -d "$plugin_root/agents" ] && n_agents=$(find "$plugin_root/agents" -maxdepth 1 -name '*.md' | wc -l)
+    echo "  Claude plugin: $n_skills skills, $n_agents agents, logging hook installed"
+    echo "  Claude plugin: BSC skill loads and BSC agent invocations log to ~/.claude/bsc-usage.log"
+
+    # 2. Per-project CLAUDE.md (existing behavior, reused). Prompts for compile
+    # command and clangd path. Skipped if stdin is not a tty (e.g. CI).
+    local claude_md="$TARGET/CLAUDE.md"
+    if [ "$LITE" = "true" ]; then
+        write_always_loaded_rules_lite "$claude_md"
+    else
+        write_always_loaded_rules "$claude_md"
+    fi
+
+    if [ -t 0 ]; then
+        echo ""
+        echo "  Project setup for: $TARGET"
+        printf "    Compile command for THIS project (blank to leave FILL-IN): "
+        read -r compile_cmd || compile_cmd=""
+        printf "    Path to BSC-aware clangd binary (blank if none): "
+        read -r clangd_path || clangd_path=""
+
+        # If user gave a compile command, replace the FILL-IN block.
+        if [ -n "${compile_cmd:-}" ]; then
+            # Use a tmp file; sed -i differs across BSD/GNU.
+            local tmp; tmp="$(mktemp)"
+            awk -v cmd="$compile_cmd" '
+                /^\*\*\[FILL IN: how to compile/ {
+                    print "**Compile command for this project:**"
+                    print ""
+                    print "```"
+                    print cmd
+                    print "```"
+                    skip = 1
+                    next
+                }
+                skip && /^If this section still says/ { skip = 0; next }
+                skip && /^If this block still says/  { skip = 0; next }
+                !skip { print }
+            ' "$claude_md" > "$tmp" && mv "$tmp" "$claude_md"
+            echo "    Wrote compile command to CLAUDE.md"
+        else
+            echo "    Left FILL-IN block in CLAUDE.md — edit it before using BSC tooling"
+        fi
+
+        # If user gave a clangd path, validate and write to plugin config so the
+        # custom-clangd plugin (or a future LSP integration) can pick it up.
+        if [ -n "${clangd_path:-}" ]; then
+            if [ -x "$clangd_path" ]; then
+                printf '{\n  "clangd": "%s"\n}\n' "$clangd_path" > "$plugin_root/clangd-config.json"
+                echo "    Recorded clangd at $clangd_path → $plugin_root/clangd-config.json"
+            else
+                echo "    WARNING: $clangd_path is not executable — skipped recording it"
+            fi
+        else
+            echo "    Skipped clangd setup. To add later:  bash install.sh -a claude-plugin"
+        fi
+    else
+        echo "  (non-interactive: skipped compile/clangd prompts; CLAUDE.md left with FILL-IN)"
+    fi
+}
+
 # --- Install: Cursor ---
 install_cursor() {
     local dst="$TARGET/.cursorrules"
@@ -547,6 +642,13 @@ if [ "$ACTION" = "uninstall" ]; then
         fi
     done
 
+    # Claude Code global plugin
+    plugin_root="${BSC_PLUGIN_ROOT:-$HOME/.claude/plugins/bisheng-c-skills}"
+    if [ -d "$plugin_root" ]; then
+        rm -rf "$plugin_root"
+        echo "  Removed Claude Code global plugin at $plugin_root"
+    fi
+
     echo "Done."
     exit 0
 fi
@@ -556,12 +658,13 @@ echo "Installing BiSheng C Skills to: $TARGET"
 echo ""
 
 case "$ADAPTER" in
-    claude)    install_claude ;;
-    cursor)    install_cursor ;;
-    windsurf)  install_windsurf ;;
-    opencode)  install_opencode ;;
-    copilot)   install_copilot ;;
-    codex)     install_codex ;;
+    claude)         install_claude ;;
+    claude-plugin)  install_claude_plugin ;;
+    cursor)         install_cursor ;;
+    windsurf)       install_windsurf ;;
+    opencode)       install_opencode ;;
+    copilot)        install_copilot ;;
+    codex)          install_codex ;;
     all)
         install_claude
         install_cursor
@@ -572,7 +675,7 @@ case "$ADAPTER" in
         ;;
     *)
         echo "Unknown adapter: $ADAPTER" >&2
-        echo "Supported: claude, cursor, windsurf, opencode, copilot, codex, all" >&2
+        echo "Supported: claude, claude-plugin, cursor, windsurf, opencode, copilot, codex, all" >&2
         exit 1
         ;;
 esac

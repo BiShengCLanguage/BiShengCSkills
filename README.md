@@ -38,11 +38,33 @@ bash install.sh -a all       # All of the above
 | Tool | Where | How it works |
 |------|-------|--------------|
 | **Claude Code** | `.claude/skills/` + `.claude/agents/` + `CLAUDE.md` | Skills auto-invoke based on context; agents run on demand; CLAUDE.md loads BSC syntax rules on every session |
+| **Claude Code (plugin)** | `~/.claude/plugins/bisheng-c-skills/` + per-project `CLAUDE.md` | Global plugin: skills + agents available in every project. Logs BSC skill loads & BSC agent invocations to `~/.claude/bsc-usage.log`. Prompts for compile command + optional clangd path |
 | **Cursor** | `.cursorrules` | All skills concatenated with critical rules header |
 | **Windsurf** | `.windsurfrules` | All skills concatenated with critical rules header |
 | **OpenCode** | `.opencode/skills/<skill>/SKILL.md` | One skill per directory (native format, auto-triggers) |
 | **Copilot** | `.github/copilot-instructions.md` | All skills concatenated with critical rules header |
 | **Codex** | `AGENTS.md` | All skills concatenated with critical rules header |
+
+### Claude Code: per-project vs. global plugin
+
+Two install modes for Claude Code:
+
+- **`-a claude`** (per-project) — copies skills/agents into `<project>/.claude/`. Each project has its own copy. Good if you want isolated/pinned versions per project.
+- **`-a claude-plugin`** (global plugin) — installs once to `~/.claude/plugins/bisheng-c-skills/`. All your projects pick it up. Also writes a per-project `CLAUDE.md` with the compile command for *this* project. Includes a logging hook that records BSC skill loads and BSC agent invocations.
+
+```bash
+# Run from inside your project directory
+cd my-bsc-project
+curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a claude-plugin
+```
+
+**Run this from your project's root directory.** The installer writes `CLAUDE.md` into `$PWD` — running it from the wrong directory will put `CLAUDE.md` in the wrong place. Not the installer's job to second-guess you.
+
+The installer prompts for two things:
+1. **Compile command for this project** — written into the FILL-IN block of `CLAUDE.md`. Leave blank to fill in later by hand.
+2. **Path to a BSC-aware clangd binary** — optional. If you don't have one yet, leave blank; nothing breaks. Re-run the installer later when you do.
+
+Logging: every time the model loads a `bsc-*` (or `c-to-bsc`) skill, or invokes the `bsc-planner`/`bsc-learn` agent, a line appends to `~/.claude/bsc-usage.log`. Override with `BSC_LOG_FILE=/path/to/log`.
 
 ### Lite Mode (for less-capable models)
 
