@@ -1,0 +1,19 @@
+{
+  "name": "bsc",
+  "owner": {
+    "name": "BiSheng C"
+  },
+  "metadata": {
+    "description": "BiSheng C language skills, planning agents, and BSC-specific usage logging for Claude Code.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "bisheng-c-skills",
+      "source": "./",
+      "description": "20 BiSheng C skills, 2 planning agents (bsc-planner, bsc-learn), and a PreToolUse hook that logs BSC skill loads and BSC agent invocations to ~/.claude/bsc-usage.log.",
+      "category": "language-support",
+      "tags": ["bisheng-c", "bsc", "c", "ownership", "memory-safety"]
+    }
+  ]
+}
