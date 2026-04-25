@@ -23,16 +23,19 @@ ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 case "$tool_name" in
     Skill)
         skill=$(printf '%s' "$input" | sed -n 's/.*"skill"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        # Skills loaded from a plugin arrive prefixed as "<plugin>:<skill>"
+        # (e.g. "bisheng-c-skills:bsc-ownership"). Match both forms.
         case "$skill" in
-            bsc-*|c-to-bsc)
+            bsc-*|c-to-bsc|bisheng-c-skills:bsc-*|bisheng-c-skills:c-to-bsc)
                 printf '%s\tSkill\t%s\n' "$ts" "$skill" >> "$LOG_FILE"
                 ;;
         esac
         ;;
     Agent)
         subagent=$(printf '%s' "$input" | sed -n 's/.*"subagent_type"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        # Agents from a plugin may also arrive prefixed as "<plugin>:<agent>".
         case "$subagent" in
-            bsc-planner|bsc-learn)
+            bsc-planner|bsc-learn|bisheng-c-skills:bsc-planner|bisheng-c-skills:bsc-learn)
                 printf '%s\tAgent\t%s\n' "$ts" "$subagent" >> "$LOG_FILE"
                 ;;
         esac
