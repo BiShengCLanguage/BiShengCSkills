@@ -5,6 +5,42 @@ description: "BiSheng C safe zones. When you need to understand _Safe functions,
 
 # BiSheng C Safe Zones Skill
 
+## A Function With `_Unsafe { ... }` Inside Is STILL `_Safe`
+
+`_Safe` and `_Unsafe { ... }` are not in conflict; the whole point of an
+`_Unsafe` block is to give the function a local escape. Do not demote a
+function from `_Safe` to `_Unsafe` because its body needs one or two
+escape lines. `_Unsafe` is contagious — making the function `_Unsafe`
+forces every caller to also be `_Unsafe`.
+
+## `_Unsafe` Blocks Must Be Minimal
+
+Wrap only the statements that genuinely require the escape, and nothing
+else. Re-check each line you put inside `_Unsafe { ... }`: if it would
+compile fine in `_Safe`, move it out.
+
+```c
+// BAD — bloated _Unsafe block, only the assignment needs the escape
+_Safe void f(uint8_t *buf, size_t i, uint8_t v) {
+    _Unsafe {
+        if (i >= cap) return;
+        validate(v);
+        buf[i] = v;
+        log("wrote byte");
+    }
+}
+
+// GOOD — only the raw subscript is _Unsafe
+_Safe void f(uint8_t *buf, size_t i, uint8_t v) {
+    if (i >= cap) return;
+    validate(v);
+    _Unsafe buf[i] = v;
+    log("wrote byte");
+}
+```
+
+`_Unsafe stmt;` (single statement, no braces) is often the right shape.
+
 ## 1. Overview
 
 Designate code regions where the compiler enforces memory safety. Default context is `_Unsafe` (standard C compatibility). Use `_Safe` to opt in to strict checking.

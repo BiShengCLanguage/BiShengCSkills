@@ -5,6 +5,22 @@ description: "BiSheng C borrowing. When you need to understand _Borrow pointers,
 
 # BiSheng C Borrowing Skill
 
+## Pick `_Borrow`, Not `_Owned`, By Default for Pointer Parameters
+
+A function that **reads or mutates** a value through a pointer but does **not
+take ownership** must use `_Borrow`, never `_Owned`.
+
+- The function frees the pointer, transfers it onward, or stores it long-term → `T *_Owned`.
+- The function only reads through the pointer → `const T *_Borrow`.
+- The function mutates *through* the pointer but does not free it → `T *_Borrow`.
+- The function does pointer arithmetic / iteration → raw `T *`.
+
+`_Owned` parameters consume the caller's variable. Most C functions don't do
+that. Defaulting to `_Owned` everywhere makes every call site a one-shot move
+and forces ugly re-allocation patterns at the call sites — that's wrong.
+
+For a translation context, see `/c-to-bsc` Step 2.5.
+
 ## CRITICAL: `_Borrow` Syntax
 
 **`_Borrow` goes AFTER the `*`, not before the type.** It is a pointer qualifier.

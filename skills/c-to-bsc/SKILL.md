@@ -58,6 +58,78 @@ _Unsafe void log_value(const int *_Borrow v) {
 }
 ```
 
+**A function with an `_Unsafe { ... }` block inside is STILL `_Safe`.** The
+two are not in conflict; that is the whole point of `_Unsafe` blocks. Do not
+demote the function to `_Unsafe` just because its body needs one escape.
+
+**`_Unsafe` blocks must be minimal.** Wrap exactly the statements that require
+the escape, and nothing else. Re-check every line you put inside `_Unsafe`:
+if it would compile fine in `_Safe`, move it out.
+
+```c
+// BAD — bloated _Unsafe block, only the assignment needs the escape
+_Safe void f(uint8_t *buf, size_t i, uint8_t v) {
+    _Unsafe {
+        if (i >= cap) return;       // _Safe-able
+        validate(v);                // _Safe-able
+        buf[i] = v;                 // raw subscript — needs _Unsafe
+        log("wrote byte");          // _Safe-able
+    }
+}
+
+// GOOD — only the raw-subscript line is _Unsafe
+_Safe void f(uint8_t *buf, size_t i, uint8_t v) {
+    if (i >= cap) return;
+    validate(v);
+    _Unsafe buf[i] = v;             // single-statement _Unsafe — no braces needed
+    log("wrote byte");
+}
+```
+
+**Self-check before submitting BSC code with any `_Unsafe`:**
+1. Is the enclosing function annotated `_Safe`? If not, would it pass the
+   borrow checker as `_Safe`? If yes, change it.
+2. Is every line inside `_Unsafe { ... }` actually requiring the escape? If
+   not, move the safe lines out — a one-line `_Unsafe stmt;` (no braces) is
+   often the right shape.
+
+### Step 2.5: Default Pointer Parameters to `_Borrow`, Not `_Owned`
+
+A function that **reads or mutates** a value through a pointer but does **not
+take ownership** must use `_Borrow`, never `_Owned`. `_Owned` means the
+function consumes the value — the caller's variable becomes dead after the
+call. Most C functions don't do that; they just need to look at or mutate
+something that lives elsewhere.
+
+**Rule of thumb when picking a parameter qualifier:**
+
+- The function frees the pointer, transfers it onward, or stores it in a
+  long-lived owner → `T *_Owned`. (Caller's variable is dead after the call.)
+- The function only reads through the pointer → `const T *_Borrow`.
+- The function mutates *through* the pointer but does not free it → `T *_Borrow`.
+- The function does pointer arithmetic / iteration → raw `T *` (no borrow).
+
+```c
+// BAD — _Owned forces the caller to give up ownership for a function
+// that just reads. Caller cannot use cfg afterwards.
+_Safe int get_port(const Config *_Owned cfg) { return cfg->port; }
+
+// GOOD — borrow; caller keeps cfg
+_Safe int get_port(const Config *_Borrow cfg) { return cfg->port; }
+
+// BAD — _Owned for a setter that doesn't consume
+_Safe void set_port(Config *_Owned cfg, int p) { cfg->port = p; }
+
+// GOOD — mutable borrow; caller keeps cfg
+_Safe void set_port(Config *_Borrow cfg, int p) { cfg->port = p; }
+```
+
+**Self-check before annotating a function signature:** for each pointer
+parameter, ask "does the caller's variable become dead after this call?" If
+no, it is `_Borrow`, not `_Owned`. Defaulting to `_Owned` everywhere makes
+every call site a one-shot move — that is wrong, and it forces the caller
+into ugly re-allocation patterns that aren't in the original C.
+
 See `/bsc-safe-zone` for the full list of `_Safe`-zone restrictions and legitimate uses of `_Unsafe` blocks.
 
 ### Step 3: Analyze Ownership (THE CRITICAL STEP)
@@ -1193,6 +1265,76 @@ cJSON_AddStringToObject(ref, "name", "val");           // mutate via borrow
 move. In BSC, raw-from-`_Owned` aliasing is a type error in `_Safe` and a
 use-after-move hazard in `_Unsafe`. Pick Option A or B.
 
+## Verification Workflow — STOP CONDITION FOR REPORTING SUCCESS
+
+A C-to-BSC translation is **not done** until both the project compile command
+runs clean AND the existing test suite passes. This is non-negotiable; the
+borrow-checker errors are exactly what makes the translation correct, and a
+"finished" translation that doesn't compile is a translation that hides bugs.
+
+### Step A — Find the project's compile command
+
+Look in `CLAUDE.md` (or `AGENTS.md`) for a section labelled "BSC Project
+Compile Command" or "Compile command for this project". This is set up by
+`install.sh -a claude-plugin` and contains the exact compiler path,
+include flags, and verify command for **this project**.
+
+If that section still says `[FILL IN: ...]` or is missing entirely:
+
+> **STOP. Do not guess.** Do not fall back to `clang file.cbs -o output` or
+> `clang -x bsc file.c -fsyntax-only` — those will fail for almost every real
+> project (wrong compiler, missing includes). Ask the user:
+>
+> *"I don't see a compile command in `CLAUDE.md`. What's the exact command
+> to compile and verify a BSC file in this project? (compiler path, include
+> flags, and how to run the test suite)"*
+>
+> Wait for the user's answer before writing or modifying any BSC code. A
+> translation that compiles in your head but not under the project's
+> toolchain is worse than no translation.
+
+### Step B — Compile after every meaningful change
+
+After translating a file (or a coherent chunk of one), run the project's
+verify command on it. Fix every diagnostic before moving to the next file.
+Do not batch a dozen translated files and hope they all compile at the end —
+ownership errors are easier to fix one at a time, and the model's mental
+state after one file's worth of `_Owned`/`_Borrow` is clearest while the
+file is fresh.
+
+### Step C — Run the existing test suite
+
+The translated code must pass **the project's existing tests**. Tests are
+the contract. A translation that compiles but breaks tests has changed the
+program's behavior, which means the ownership annotations are wrong (you
+moved something that shouldn't have been moved, dropped something that
+needed to live, or introduced an unintended copy/mutation).
+
+If the project has no tests, say so explicitly in the report:
+
+> *"The translation compiles, but the project has no test suite I could
+> run to verify behavior. The translation is syntactically valid BSC but
+> not behaviorally verified."*
+
+Do not invent tests as part of the translation work — that's a separate
+task. Do report the gap.
+
+### Step D — Reporting
+
+Only after Steps A–C pass do you report the translation as complete. The
+report must state, in this order:
+
+1. The exact compile command you ran and that it returned 0.
+2. The exact test command you ran and that it returned 0 (or that no
+   test suite exists).
+3. A summary of the ownership decisions (counts of `_Owned`, `_Borrow`,
+   `_Unsafe` blocks; any cases where you escalated to `_Unsafe` rather
+   than annotating).
+
+Anything less than this — "I think it should compile", "the borrow checker
+might complain about X", "tests probably still pass" — is **not done**. Go
+back to Step B.
+
 ## Checklist — Verify Before Done
 
 - [ ] File extensions KEPT as `.c`/`.h` — compile with `clang -x bsc file.c` (do NOT rename)
@@ -1226,4 +1368,6 @@ use-after-move hazard in `_Unsafe`. Pick Option A or B.
 - [ ] **No hook/allocator indirection**: Custom allocator structs removed, replaced with direct malloc/free
 - [ ] **Nullability**: Pointers that can be null use `_Nullable`; `nullptr` used instead of `NULL` in BSC
 - [ ] **Initialization**: Variables initialized before use in `_Safe` zones; arrays use init lists (not element-by-element)
-- [ ] Code compiles with `clang`
+- [ ] **Project compile command** (from `CLAUDE.md`) runs clean on the changed files. NOT a generic `clang file.cbs` — the project's actual command. If `CLAUDE.md` has no compile command, the model has STOPPED and asked the user (see "Verification Workflow")
+- [ ] **Project test suite** runs clean on the changed files (or the absence of a test suite is reported explicitly)
+- [ ] **Every `_Unsafe` block reviewed**: enclosing function is `_Safe` if its interface allows; the block contains only the lines that actually need the escape
