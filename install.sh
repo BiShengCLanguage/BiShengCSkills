@@ -494,13 +494,15 @@ install_claude_plugin() {
         write_always_loaded_rules "$claude_md"
     fi
 
-    if [ -t 0 ]; then
+    # Use /dev/tty for prompts so that piping the installer (curl | bash, or
+    # bash <(curl ...) where fd 0 may be the script fd) still gets a real tty.
+    if [ -r /dev/tty ] && [ -w /dev/tty ]; then
         echo ""
         echo "  Project setup for: $TARGET"
-        printf "    Compile command for THIS project (blank to leave FILL-IN): "
-        read -r compile_cmd || compile_cmd=""
-        printf "    Path to BSC-aware clangd binary (blank if none): "
-        read -r clangd_path || clangd_path=""
+        printf "    Compile command for THIS project (blank to leave FILL-IN): " > /dev/tty
+        IFS= read -r compile_cmd < /dev/tty || compile_cmd=""
+        printf "    Path to BSC-aware clangd binary (blank if none): " > /dev/tty
+        IFS= read -r clangd_path < /dev/tty || clangd_path=""
 
         # If user gave a compile command, replace the FILL-IN block.
         if [ -n "${compile_cmd:-}" ]; then
