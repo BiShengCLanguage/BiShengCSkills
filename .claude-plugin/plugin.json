@@ -1,0 +1,11 @@
+{
+  "name": "bisheng-c-skills",
+  "version": "1.0.0",
+  "description": "BiSheng C (BSC) language skills, planning agents, and BSC-specific usage logging for Claude Code.",
+  "author": {
+    "name": "BiSheng C"
+  },
+  "homepage": "https://gitee.com/bisheng_c_language_dep/BiShengCSkills",
+  "repository": "https://gitee.com/bisheng_c_language_dep/BiShengCSkills",
+  "keywords": ["bisheng-c", "bsc", "c", "ownership", "memory-safety"]
+}
