@@ -461,14 +461,25 @@ CLAUDE_EXTRA_EOF
 # Then writes per-project CLAUDE.md and prompts for compile command + optional
 # clangd path. Run from inside your project directory.
 install_claude_plugin() {
-    local marketplace_url="${BSC_MARKETPLACE_URL:-https://gitee.com/bisheng_c_language_dep/BiShengCSkills}"
     local marketplace_name="bsc"
     local plugin_id="bisheng-c-skills@${marketplace_name}"
+    # Use the local clone as the marketplace source. The installer's bootstrap
+    # has already cloned the repo to $SCRIPT_DIR (or it lives at the user's own
+    # checkout). `claude plugin marketplace add <directory>` reads
+    # .claude-plugin/marketplace.json from that path. Using a directory
+    # avoids gitee-vs-github URL gymnastics — works regardless of host.
+    local marketplace_source="${BSC_MARKETPLACE_SOURCE:-$SCRIPT_DIR}"
 
     if ! command -v claude >/dev/null 2>&1; then
         echo "ERROR: 'claude' CLI not found on PATH." >&2
         echo "  Install Claude Code first (https://docs.claude.com/en/docs/claude-code)," >&2
         echo "  then re-run:  bash install.sh -a claude-plugin" >&2
+        exit 1
+    fi
+
+    if [ ! -f "$marketplace_source/.claude-plugin/marketplace.json" ]; then
+        echo "ERROR: $marketplace_source/.claude-plugin/marketplace.json not found." >&2
+        echo "  Re-run the curl-pipe installer, or run from a fresh clone." >&2
         exit 1
     fi
 
@@ -479,9 +490,17 @@ install_claude_plugin() {
         rm -rf "$orphan"
     fi
 
-    # Register the marketplace (idempotent — adding the same URL twice is fine).
-    echo "  Claude plugin: adding marketplace 'bsc' from $marketplace_url"
-    claude plugin marketplace add "$marketplace_url" 2>&1 | sed 's/^/    /' || {
+    # If the marketplace 'bsc' is already registered, remove it first so we
+    # pick up changes (e.g. updated plugin list, new version). 'add' refuses
+    # to overwrite an existing marketplace of the same name.
+    if claude plugin marketplace list 2>/dev/null | grep -q '^[[:space:]]*bsc\b'; then
+        echo "  Claude plugin: refreshing existing marketplace 'bsc'"
+        claude plugin marketplace remove bsc >/dev/null 2>&1 || true
+    fi
+
+    # Register the marketplace from the local clone.
+    echo "  Claude plugin: adding marketplace 'bsc' from $marketplace_source"
+    claude plugin marketplace add "$marketplace_source" 2>&1 | sed 's/^/    /' || {
         echo "ERROR: 'claude plugin marketplace add' failed." >&2
         exit 1
     }
