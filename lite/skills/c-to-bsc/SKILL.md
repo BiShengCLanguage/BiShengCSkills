@@ -12,11 +12,47 @@ description: "BiSheng C translation from C. When you translate C code to BSC, ad
 - Keep `.c`/`.h` extensions; compile with `clang -x bsc file.c` (or `-xbsc`, both work).
 - The one new include you typically need: `#include "bishengc_safety.hbs"` where you use `safe_malloc`/`safe_free`.
 
+## TOP RULE: Safe by Default — `_Unsafe` is Compiler-Driven
+
+**Mark every function `_Safe`. Write every body as if it were `_Safe`. Add `_Unsafe` ONLY where the compiler reports an error you cannot fix any other way.**
+
+Workflow:
+
+1. Annotate the function `_Safe`; translate the body with no `_Unsafe`.
+2. Compile. For each diagnostic, first try to fix it **without** `_Unsafe` — convert `&` to `&_Const`/`&_Mut`, swap raw `malloc`/`free` for `safe_malloc`/`safe_free`, fix `_Owned`/`_Borrow`/`_Nullable` annotations, restructure the line.
+3. Only when no `_Safe`-zone form works (variadic `printf`, raw pointer arithmetic, FFI, raw subscripting), wrap the **single offending statement** in `_Unsafe stmt;` (no braces) or `_Unsafe { ... }` (smallest block).
+4. Re-compile and repeat.
+
+Forbidden: marking the whole function `_Unsafe` for one bad line; wrapping multiple lines when one triggered the error; adding `_Unsafe` pre-emptively before compiling; using `_Unsafe` to escape borrow-checker errors (fix the annotations instead).
+
+## TOP RULE 2: Every Pointer in a Function Signature MUST Be Annotated
+
+**No bare `T *` in any parameter or return type.** Every pointer in a function declaration / definition / parameter list must carry `_Owned` or `_Borrow`, OR fall into one of four narrow raw cases: output double-pointer (`T **out`), function pointer, opaque cast intermediary, or arithmetic cursor.
+
+Decision tree:
+
+1. Function frees / transfers / stores → `T *_Owned`.
+2. Function only reads → `const T *_Borrow`.
+3. Function mutates but does not free → `T *_Borrow`.
+4. None of the above → re-read the body and the call sites; do NOT leave bare `T *` as a placeholder.
+
+The annotation MUST match between the `.h` declaration and the `.c` definition. A bare-`T*` declaration with an annotated definition (or vice versa) is a bug.
+
+```c
+// WRONG — bare T*, ownership unspecified
+Node *find(Container *c, int id);
+void enqueue(Container *c, Node *item);
+
+// CORRECT
+const Node *_Borrow find(const Container *_Borrow c, int id);
+void enqueue(Container *_Borrow c, Node *_Owned item);
+```
+
 ## Step 1: Default to `_Safe`; Keep `_Unsafe` Minimal
 
-When you add or modify a function signature, default to `_Safe`. For specific operations that can't be safety-checked (variadic calls like `printf`, raw pointer math, FFI, pointer conversions that need casts), wrap ONLY those operations in `_Unsafe { ... }` blocks inside the `_Safe` function.
+This is the TOP RULE applied per function. Default the signature to `_Safe`. Compile. Wrap only the lines the compiler rejects in `_Unsafe { ... }` (or `_Unsafe stmt;`).
 
-**`_Unsafe` is contagious**: an `_Unsafe` function forces every caller to also be in `_Unsafe` context. Don't mark a whole function `_Unsafe` to avoid wrapping one line.
+**`_Unsafe` is contagious**: an `_Unsafe` function forces every caller to also be in `_Unsafe` context. Don't mark a whole function `_Unsafe` to avoid wrapping one line. A function with an `_Unsafe { ... }` block inside is **still `_Safe`** — that is the whole point.
 
 ```c
 // GOOD — interface _Safe, only the unsafe op is wrapped
@@ -179,8 +215,10 @@ Fix errors iteratively. The most common errors:
 - [ ] `#include` paths unchanged (still reference `.h`)
 - [ ] `#include "bishengc_safety.hbs"` added where safe_malloc/safe_free are used
 - [ ] Functions default to `_Safe`; `_Unsafe` only wraps specific operations (not whole functions)
+- [ ] Every `_Unsafe` corresponds to a real compiler diagnostic that no `_Safe`-zone fix could resolve. No pre-emptive `_Unsafe`; deleting it would re-introduce a compile error.
 - [ ] Every pointer classified: `_Owned`, `_Borrow`, or raw
 - [ ] Struct fields annotated based on whether the cleanup function frees them
+- [ ] Every pointer in every function signature annotated — no bare `T *` in parameter or return type unless it is a documented raw case (output double-pointer, function pointer, opaque cast, arithmetic cursor); declarations and definitions agree
 - [ ] Function parameters and returns annotated
 - [ ] Read-only getters (`get_`/`find_`/`has_`/`count_`/`is_`/`peek_`) take `const T *_Borrow this` AND return `const ...*_Borrow`
 - [ ] `malloc` → `safe_malloc<T>(val)` where size is a single `T`

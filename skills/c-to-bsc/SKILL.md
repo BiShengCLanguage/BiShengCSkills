@@ -9,6 +9,67 @@ description: "BiSheng C translation from C. When you need to translate/convert/p
 
 If you are translating C code to BSC, you MUST follow this process. **The fundamental rule is: keep the file structure as-is, only ADD ownership annotations.** Do NOT rename `.c`/`.h` → `.cbs`/`.hbs`; do NOT strip platform-specific code. Compile with `clang -x bsc file.c`. A translation is about analyzing every pointer and adding BSC annotations — not about restructuring the codebase.
 
+## TOP RULE: Safe by Default — `_Unsafe` is Compiler-Driven, Not Author-Driven
+
+**Mark every function `_Safe`. Write every body as if it were `_Safe`. Add `_Unsafe` ONLY where the compiler reports an error you cannot fix any other way.**
+
+You do not get to predict which lines "feel unsafe" and pre-wrap them. The borrow checker and safe-zone checker are the source of truth — if a line compiles in `_Safe`, it stays in `_Safe`. The workflow is:
+
+1. Annotate the function signature `_Safe`.
+2. Translate the body as plain BSC — no `_Unsafe` anywhere.
+3. Compile. For each diagnostic the compiler reports:
+   - First try to **fix it without `_Unsafe`** (convert `&` to `&_Const`/`&_Mut`, replace raw `malloc`/`free` with `safe_malloc`/`safe_free`, add missing `_Owned`/`_Borrow`/`_Nullable`, restructure the line).
+   - Only if no `_Safe`-zone form exists (variadic `printf`, raw pointer arithmetic on a non-container buffer, FFI cast, raw subscripting through `T*`, etc.), wrap **just the offending statement** in `_Unsafe stmt;` (no braces) or `_Unsafe { ... }` (smallest block).
+4. Re-compile. Repeat until clean. Do not pre-emptively widen any `_Unsafe` block "in case" — leave it tight; the compiler will tell you if you need more.
+
+**Forbidden shortcuts:**
+
+- ❌ Marking a whole function `_Unsafe` because one line inside needed an escape.
+- ❌ Wrapping a multi-line block in `_Unsafe { ... }` when only one statement triggered the error.
+- ❌ Adding `_Unsafe` "defensively" before compiling — write the safe form first, let the compiler decide.
+- ❌ Treating a borrow-checker error as a reason to escape to `_Unsafe`. Borrow errors mean the ownership annotations are wrong; fix the annotations, do not bypass the checker.
+
+**`_Unsafe` is contagious — `_Unsafe` on a function forces every caller into `_Unsafe` context.** Keeping the function `_Safe` and the escape limited to one line keeps the cost local. A function that contains an `_Unsafe { ... }` block is **still `_Safe`** — that is the whole point of the block.
+
+The rest of this Skill expands on what to write inside `_Safe` and how to fix specific diagnostics. When a section says "use `_Unsafe` for X", it means: the compiler will reject the safe form for X — wrap the minimal failing line, not the surrounding logic.
+
+## TOP RULE 2: Every Pointer in a Function Signature MUST Be Annotated
+
+**Every pointer that appears in a function declaration, function definition, or parameter list MUST carry `_Owned`, `_Borrow`, or be deliberately raw with a structural reason.** A bare `T *` in a signature is NEVER acceptable as a "default" or "TODO" — it is a positive claim that the pointer is raw (interior pointer, arithmetic cursor, output double-pointer, function pointer, opaque void* in generic contexts, or inside an `_Unsafe`-only API).
+
+This applies to:
+
+- Every parameter: `f(T *p)` is wrong unless `p` is genuinely raw. Use `f(T *_Owned p)`, `f(T *_Borrow p)`, or `f(const T *_Borrow p)`.
+- Every return type: `T *f(...)` is wrong unless the returned pointer is genuinely raw. Use `T *_Owned f(...)` (caller frees) or `T *_Borrow f(...)` (caller does not free; lifetime tied to an input).
+- Both the declaration in the `.h`/`.hbs` AND the definition in the `.c`/`.cbs` — they must match.
+
+**Default decision tree (apply to every pointer in every signature):**
+
+1. Does the function free the pointer, transfer it onward, or store it in a long-lived owner? → `T *_Owned`.
+2. Does the function read through it without mutating? → `const T *_Borrow`.
+3. Does the function mutate through it but does not free? → `T *_Borrow`.
+4. Is it an output double-pointer (`T **out`), function pointer, opaque cast intermediary, or a cursor for arithmetic? → raw `T *` is correct, with a one-line comment explaining why.
+
+If none of (1)–(4) clearly applies, you have not finished analyzing the function. **Do not leave it raw as a "good enough" placeholder** — the missing annotation will silently pass C, fail under BSC's borrow checker at the call site, or worse, type-check but encode the wrong ownership model.
+
+```c
+// WRONG — bare T*; reader cannot tell if caller frees, callee frees, or both
+Node *find(Container *c, int id);
+
+// CORRECT — read-only lookup, returns reference into c
+const Node *_Borrow find(const Container *_Borrow c, int id);
+
+// CORRECT — factory: callee allocates, caller frees
+Node *_Owned create(int id);
+
+// CORRECT — consumer: callee takes ownership of item
+void enqueue(Container *_Borrow c, Node *_Owned item);
+```
+
+**Header / source consistency.** The annotation must appear in the declaration too, not just the definition. A `.h` that exposes `Node *find(Container *c, int id)` while the `.c` defines `const Node *_Borrow find(const Container *_Borrow c, int id)` will produce mismatched-type diagnostics or silently let callers misuse the API.
+
+**Self-check at translation time:** before moving to the next function, scan its signature line-by-line and confirm every `*` has a qualifier (`_Owned` / `_Borrow`) or a deliberate raw-with-reason justification. If you cannot decide, that is a signal to read the function body and its callers — not a signal to leave it bare.
+
 **MINIMUM BAR**: A valid BSC translation of any non-trivial C project MUST contain `_Owned` annotations. Any C code that calls `malloc`/`free` has ownership semantics that MUST be expressed in BSC. If your translation has zero `_Owned` annotations, it is incomplete — go back to Step 3 and re-analyze. "The code is too complex for ownership" is NOT a valid reason to skip annotations; use `_Unsafe` blocks for the complex parts and annotate what you can.
 
 ## CRITICAL RULE: `_Owned` Is Non-Nullable By Default
@@ -40,9 +101,11 @@ cJSON *_Owned item = safe_malloc<cJSON>((cJSON){0});
 
 Why: incremental migration lets the project build as plain C AND as BSC from the same sources; keeps review diffs focused on ownership; preserves cross-platform code if you need it later.
 
-### Step 2: Default Functions to `_Safe`; Keep `_Unsafe` Minimal
+### Step 2: Default Functions to `_Safe`; Add `_Unsafe` Only When the Compiler Demands It
 
-When you add or modify a function signature, default to `_Safe`. Only mark a function `_Unsafe` if most of its body genuinely can't be safety-checked. For specific operations that need to escape — variadic calls like `printf`, raw pointer arithmetic, FFI, pointer conversions requiring casts — wrap ONLY those operations in `_Unsafe { ... }` blocks inside the `_Safe` function.
+This step is the application of the **TOP RULE** at the top of this Skill. Read it again before continuing.
+
+When you add or modify a function signature, mark it `_Safe`. Write the body as if it were fully `_Safe`. Compile. The compiler — not your intuition — tells you which lines need to escape to `_Unsafe`. For operations the safety checker genuinely cannot model — variadic calls like `printf`, raw pointer arithmetic, FFI, pointer conversions requiring casts, raw subscripting through `T*` — wrap ONLY the offending statement in an `_Unsafe stmt;` (single line, no braces) or `_Unsafe { ... }` block.
 
 **`_Unsafe` is contagious.** An `_Unsafe` function forces every caller to also be in `_Unsafe` context, and the cost spreads through the codebase. Keeping the interface `_Safe` lets the borrow checker help callers, even when the implementation has some escape hatches inside.
 
@@ -107,7 +170,7 @@ something that lives elsewhere.
   long-lived owner → `T *_Owned`. (Caller's variable is dead after the call.)
 - The function only reads through the pointer → `const T *_Borrow`.
 - The function mutates *through* the pointer but does not free it → `T *_Borrow`.
-- The function does pointer arithmetic / iteration → raw `T *` (no borrow).
+- The function does pointer arithmetic / iteration → raw `T *` (no borrow). This is the ONLY case where a bare `T *` parameter is correct; all other pointer parameters MUST be `_Owned` or `_Borrow` (see TOP RULE 2).
 
 ```c
 // BAD — _Owned forces the caller to give up ownership for a function
@@ -157,6 +220,8 @@ A pointer BORROWS data if:
 Some **specific** pointers CANNOT or SHOULD NOT be annotated. Leave these as raw `T *`.
 
 **WARNING**: Category C is for individual pointers with specific reasons, NOT for entire codebases. If you find yourself putting most pointers in Category C, you are doing it wrong — go back and re-analyze. Most pointers that touch `malloc`/`free` belong in Category A.
+
+**Category C does NOT apply to function signature pointers** (parameters or returns) except for the four narrow cases listed in TOP RULE 2: output double-pointers, function pointers, opaque cast intermediaries, and arithmetic cursors. If a signature pointer doesn't fit one of those four, it MUST be `_Owned` or `_Borrow`. Local interior/cursor variables are the typical Category C — not API surface.
 
 - **Pointer arithmetic / interior pointers**: pointers into the middle of a buffer
   ```c
@@ -1351,8 +1416,9 @@ back to Step B.
 - [ ] **Returning raw as `_Owned`**: use `__take_from_raw(raw_ptr)`, not a C cast
 - [ ] **Passing `_Owned` where raw is expected**: use borrow-then-cast `(T *)&_Mut *p` (keeps ownership) or `__move_to_raw(p)` (transfers ownership out)
 - [ ] **Every free()** converted to `safe_free((void *_Owned)p)` or `safe_free((void *_Nullable _Owned)p)`
-- [ ] **Function parameters** annotated where ownership is clear
-- [ ] **Function returns** annotated where ownership is clear
+- [ ] **Every pointer in every function signature annotated** — no bare `T *` in any parameter or return type unless it is one of the four explicit raw cases (output double-pointer, function pointer, opaque cast intermediary, arithmetic cursor). Decisions match between `.h`/`.hbs` declaration and `.c`/`.cbs` definition.
+- [ ] **Function parameters** annotated `_Owned` / `_Borrow` / `const _Borrow` per the decision tree
+- [ ] **Function returns** annotated `_Owned` (caller frees) or `_Borrow` (caller does not free)
 - [ ] **Read-only getters are `const`**: functions named `get_`/`find_`/`has_`/`count_`/`is_`/`peek_` that don't mutate take `const T *_Borrow this` AND return `const ...*_Borrow` — otherwise callers from `const` contexts can't reach them
 - [ ] **Default-emit branch preserved**: every C `*buf++ = c` in a switch/default was ported to the equivalent `out->push(c)` in BSC (silently-dropped bytes are a classic port bug)
 - [ ] **Pointer-advance loops over `const char *`**: ported as index + base-pointer in one `_Unsafe`, OR rewritten to `String::at(i)` with a length bound, OR replaced with per-literal helpers when the source is a compile-time constant
@@ -1371,3 +1437,4 @@ back to Step B.
 - [ ] **Project compile command** (from `CLAUDE.md`) runs clean on the changed files. NOT a generic `clang file.cbs` — the project's actual command. If `CLAUDE.md` has no compile command, the model has STOPPED and asked the user (see "Verification Workflow")
 - [ ] **Project test suite** runs clean on the changed files (or the absence of a test suite is reported explicitly)
 - [ ] **Every `_Unsafe` block reviewed**: enclosing function is `_Safe` if its interface allows; the block contains only the lines that actually need the escape
+- [ ] **Compiler-driven `_Unsafe`**: every `_Unsafe` in the diff corresponds to a specific compiler diagnostic that could not be fixed by adjusting annotations or rewriting in `_Safe`-zone form. No `_Unsafe` was added pre-emptively. If you can delete an `_Unsafe` and the file still compiles, delete it.
