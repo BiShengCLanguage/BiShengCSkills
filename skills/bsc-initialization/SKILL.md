@@ -290,6 +290,47 @@ _Safe void example(void) {
 - For arrays: `__assume_initialized(&arr)` (required due to array decay)
 - For structs: marks all fields as initialized
 
+### Supported argument forms
+
+The address-of operand must be one of:
+
+| Form | Meaning |
+|------|---------|
+| `&x` | local variable; if `x` is an `ensure_init` pointer parameter, also marks `*x` initialized |
+| `&x.f.g...` | local struct field, any nesting (pure field path) |
+| `&*p` | the object pointed-to by an `ensure_init` parameter `p` |
+| `&p->f.g...` | field of the object pointed-to by an `ensure_init` parameter (pure field path) |
+
+When all fields of `*p` are marked through `&p->...`, `*p` is automatically
+promoted to fully initialized.
+
+```c
+struct Pair { int a; int b; };
+void assume_through_ptr(struct Pair *__attribute__((ensure_init)) out) {
+    out->a = 1;
+    _Unsafe { __assume_initialized(&out->b); }   // all fields covered → *out initialized
+}
+```
+
+### **Array subscripts (`[i]`) are NOT allowed in the path**
+
+Init analysis treats arrays as **single units** — individual elements are not
+tracked, so you can only assume the whole array, never an element.
+
+```c
+struct WithArr { int arr[3]; };
+struct Outer   { struct WithArr s[2]; };
+
+_Safe void example(void) {
+    struct WithArr w;
+    _Unsafe { __assume_initialized(&w.arr); }       // ok: whole array field
+
+    // _Unsafe { __assume_initialized(&w.arr[0]); }     // error: subscript in path
+    // _Unsafe { __assume_initialized(&o.s[0].arr); }   // error: subscript in middle
+    // _Unsafe { __assume_initialized(&o.s[0].arr[0]); }// error: subscript at end
+}
+```
+
 ```c
 // Path-sensitive:
 _Safe void example(int cond) {

@@ -81,11 +81,17 @@ In `_Safe` zones:
 
 | Conversion | In `_Safe` | In `_Unsafe` |
 |---|---|---|
-| `T *_Borrow` → `void *_Borrow` | **OK** (implicit) | OK |
+| `T *_Borrow` → `void *_Borrow` (T is trivial data: no pointers, not `_Owned struct`) | **OK** (implicit) | OK |
+| `T *_Borrow` → `void *_Borrow` (T has pointer fields / is `_Owned struct`) | **Forbidden** (even with explicit cast) | Forbidden |
 | `void *_Borrow` → `T *_Borrow` | **Forbidden** — explicit cast required, must be in `_Unsafe` | OK (explicit cast) |
+| `T *_Borrow _ArrayElem` → `T *_Borrow` | OK (implicit) | OK |
+| `T *_Borrow` → `T *_Borrow _ArrayElem` | Forbidden | Forbidden |
 | `T *_Borrow` → raw `T *` | **Forbidden everywhere** | Forbidden everywhere |
 | `T *_Owned` → `void *_Owned` | OK (explicit cast) | OK |
+| `void *_Owned` → `T *_Owned` | Forbidden in `_Safe`; in `_Unsafe`, allowed but the resulting struct's inner `_Owned` members do NOT own anything | OK (explicit cast, same caveat) |
+| `T *_Owned` ↔ `T *_Owned _ArrayElem` (C cast) | Forbidden — these are distinct categories; use `safe_malloc_array`/`__take_array_from_raw` | Forbidden |
 | `T *_Owned` → raw `T *` | Forbidden — use `__move_to_raw` | Forbidden — use `__move_to_raw` |
+| `T *_Owned _ArrayElem` → raw `T *` | Forbidden — use `__move_array_to_raw` | Forbidden — use `__move_array_to_raw` |
 | `fn(A *_Borrow)` → `fn(B *_Borrow)` (fn-ptr cast) | Forbidden in heterogeneous `_Safe`/`_Unsafe` declarations — use trampoline pattern | Forbidden in heterogeneous declarations — use trampoline pattern |
 
 **The void-borrow two-step cast** is the canonical pattern for casting between unrelated struct pointer types inside a `_Safe` function (e.g. vtable trampolines — see `c-to-bsc` §5 "C OO patterns"):
@@ -169,8 +175,8 @@ _Unsafe int* foo(int* p);              // unsafe version
 _Safe int* _Owned foo(int* _Owned p);  // safe version: adds _Owned
 ```
 
-- `_Safe` declaration may **add** `_Owned`/`_Borrow` to raw pointer params/returns
-- Must **not remove** qualifiers present in the `_Unsafe` declaration, nor swap `_Owned` for `_Borrow`
+- `_Safe` declaration may **add** `_Owned`, `_Borrow`, `_Owned _ArrayElem`, or `_Borrow _ArrayElem` to raw pointer params/returns. `_Owned _ArrayElem` and `_Borrow _ArrayElem` are added as **whole units** — you cannot upgrade a plain `_Owned` to `_Owned _ArrayElem` across declarations.
+- Must **not remove** qualifiers present in the `_Unsafe` declaration, nor swap `_Owned` for `_Borrow` (and vice versa). Standard C qualifiers (`const`, `volatile`, …) on the **return type** must also be preserved; on **parameter types** they are stripped for compatibility.
 - In safe context, only `_Safe` overload is callable. In unsafe context, `_Safe` version preferred when types match.
 - **Generic functions do NOT support mixed mode**
 - If a function has multiple declarations of the same safety level, they must be consistent

@@ -101,7 +101,7 @@ _Safe void foo(void) {
 - After transfer, the original variable is **dead** — any use is a compile error
 - Before scope ends, `_Owned` variables **must** have ownership released
 - Release by: (a) passing to function taking `_Owned`, (b) `safe_free((void *_Owned)p)`, (c) returning, (d) assigning to another `_Owned` variable
-- No pointer arithmetic on `_Owned` pointers (no `+`, `-`, `[]`, `++`, `--`)
+- No pointer arithmetic on `_Owned` pointers (no `+`, `-`, `[]`, `++`, `--`). For an `_Owned` pointer that owns an array and needs `[]`, use `_Owned _ArrayElem` instead — see §8.
 - Comparison operators (`==`, `!=`, `<`, etc.) are allowed
 - No implicit conversion between `_Owned` and raw pointers in **either** direction — strict type matching
 - Explicit cast between `_Owned` and raw pointers requires `_Unsafe` context
@@ -113,7 +113,7 @@ _Safe void foo(void) {
   ```c
   union U { int *_Owned p; };  // ERROR
   ```
-- **Array elements**: cannot store `_Owned` pointers in arrays, including structs with `_Owned` members as array elements
+- **Array elements**: cannot store `_Owned` pointers in arrays, including structs with `_Owned` members as array elements. The same restriction applies to the pointee type of `T *_Owned _ArrayElem` (the inner element type cannot have `_Owned` members)
 
 ### Nullable `_Owned` pointers
 - `int *_Owned _Nullable p = nullptr;` allows null owned pointers
@@ -140,6 +140,8 @@ _Safe void foo(void) {
 When converting between `T *_Owned` and `void *`:
 - **Order 1**: `T *_Owned` → `void *_Owned` → `void *` (internal `_Owned` pointers must NOT have ownership)
 - **Order 2**: `T *_Owned` → `T *` → `void *` (internal `_Owned` pointers KEEP ownership)
+
+The reverse cast `void *_Owned` → `T *_Owned` is allowed (in `_Unsafe`) when the variable still owns memory, **but the resulting struct's inner `_Owned` members do NOT own their pointees** after the cast. You must either reassign them before reading or treat them as raw. Example: after `struct S *_Owned sp = _Unsafe((struct S *_Owned)memAlloc(...));`, reading `sp->p` as `int *_Owned` is a compile error until `sp->p` is reassigned.
 
 ### `_Owned` with generics
 In generic functions, when `_Owned` modifies generic type parameter T (as `T _Owned` or `_Owned T`), `_Owned` applies to the complete type T. When T instantiates as `int*`, the result is `int* _Owned`.
@@ -241,9 +243,17 @@ all-fields struct — see `/bsc-common-mistakes` §8.
 
 ### 7.3 Raw pointer as heap buffer field (RawVec idiom)
 
-`_Owned` pointers **forbid array subscript** (`ptr[i]`). A struct that owns a
-resizable heap buffer and needs to index into it must keep the buffer as a plain
-raw `T *` field — NOT `T *_Owned`. The `_Owned struct` destructor handles freeing.
+A plain `T *_Owned` **forbids array subscript** (`ptr[i]`). For a heap-allocated
+array that needs indexing you have two safe options:
+
+1. **`T *_Owned _ArrayElem`** (preferred when the buffer really is a uniform
+   array of `T`) — supports `[]` and pointer arithmetic, stays in `_Safe`. See §8.
+2. **Raw `T *` field** (the RawVec idiom, below) — needed when the buffer is
+   reinterpreted (byte buffer of mixed records), is allocated by a non-BSC
+   API (`malloc` from a C library), or otherwise doesn't fit `_ArrayElem`'s
+   uniform-element model.
+
+The `_Owned struct` destructor handles freeing in both cases.
 
 ```c
 // WRONG — _Owned ptr forbids subscript; this->data[i] = v is a compile error
@@ -276,7 +286,91 @@ _Safe void buf_write(GoodBuf *_Borrow _Nonnull this, uint8_t v) {
 
 For plain `struct` (non-`_Owned`) wrappers, the pattern is identical: raw `T *`
 field, `_Unsafe` around all dereferences, explicit `free` in a paired destroy
-function rather than a destructor. This is the correct idiom for all owned heap
-buffers in BSC — the distinction from `T *_Owned` is intentional and load-bearing.
+function rather than a destructor. The distinction from `T *_Owned` is intentional
+and load-bearing: with raw `T *` the struct itself is the logical owner; the field
+is just a cursor.
+
+### 7.4 `_Owned struct` must be defined at file scope
+
+`_Owned struct S { ... };` definitions can only appear at translation-unit (file)
+scope — alongside `_Trait` definitions and function definitions. They **cannot**
+be defined inside a function body or block (this differs from standard C where
+plain `struct` may be defined locally).
+
+```c
+// CORRECT — file scope
+_Owned struct Person { _Public: int age; ~Person(Person this) {} };
+
+_Safe int main(void) {
+    Person p = {.age = 18};
+    // _Owned struct S { };  // error: cannot be defined in function scope
+    return 0;
+}
+```
+
+Compiler error: `_Owned struct cannot be defined in function scope; move the
+definition to file scope`.
+
+## 8. `_ArrayElem`: Owned Pointers That Index Into Arrays
+
+A second qualifier, `_ArrayElem`, can be combined with `_Owned` (or `_Borrow` —
+see `bsc-borrowing`) to form a pointer **into a heap-allocated array of T**.
+
+```
+T *_Owned _ArrayElem p;   // owns a heap array of T, supports p[i], p == q
+```
+
+`_Owned _ArrayElem` follows all the rules of plain `_Owned` (move semantics,
+must be released, no implicit cast to/from raw, etc.) with these differences:
+
+- **`[]` subscript is allowed** (`p[i] = ...`, `int x = p[i];`)
+- Pointer **arithmetic is still forbidden** (`p += 1` is an error — even on
+  `_Owned _ArrayElem`)
+- Comparison (`==`, `!=`) is allowed
+- Allocate / free with **array-specific** APIs (from `bishengc_safety.hbs`):
+
+  ```c
+  _Safe T *_Owned _ArrayElem safe_malloc_array<T>(size_t n, T initial);
+  _Safe void safe_free_array(void *_Owned _ArrayElem);
+  ```
+
+- Raw-pointer conversion uses dedicated builtins (not `__move_to_raw` /
+  `__take_from_raw`):
+  - `__move_array_to_raw(p)` — moves an `_Owned _ArrayElem` out to a raw pointer
+  - `__take_array_from_raw(p)` — takes a raw pointer as `_Owned _ArrayElem`
+- **C-style casts between `T *`, `T *_Owned`, and `T *_Owned _ArrayElem` are
+  forbidden** — these three are distinct categories. Use the array builtins.
+- The **pointee type cannot contain `_Owned` members** (same restriction that
+  applies to ordinary arrays of `_Owned`).
+- `_ArrayElem` cannot modify a **raw** pointer; it only attaches to `_Owned` or
+  `_Borrow`.
+
+```c
+#include "bishengc_safety.hbs"
+
+_Safe int main(void) {
+    int *_Owned _ArrayElem p = safe_malloc_array(10, 0);  // [0]..[9] = 0
+    p[3] = 3;                                             // ok: subscript
+    // p += 1;                                            // error: no arithmetic
+    int *_Owned _ArrayElem q = safe_malloc_array(10, 1);
+    if (p == q) { /* ... */ }                             // ok: comparison
+    safe_free_array((void *_Owned _ArrayElem)p);
+    safe_free_array((void *_Owned _ArrayElem)q);
+    return 0;
+}
+```
+
+**`_Safe` / `_Unsafe` interop**: the compatibility rules treat `_Owned _ArrayElem`
+and `_Borrow _ArrayElem` as **whole qualifiers** — a `_Safe` redeclaration may
+add `_Owned _ArrayElem` to an unannotated `_Unsafe` parameter, but you cannot
+"upgrade" `_Owned` to `_Owned _ArrayElem` or move between `_Owned` and
+`_Owned _ArrayElem` across declarations.
+
+### When to prefer `_Owned _ArrayElem` over the RawVec idiom (§7.3)
+
+- Buffer is a uniform array of one element type `T` and you index it as such
+  → `_Owned _ArrayElem`.
+- Buffer is treated as raw bytes, reinterpreted, or comes from a non-BSC
+  allocator → keep raw `T *` field + `_Unsafe` (RawVec).
 
 > See also: `bsc-borrowing`, `bsc-safe-zone`, `bsc-nullability`, `bsc-design`, `bsc-errors` Skills

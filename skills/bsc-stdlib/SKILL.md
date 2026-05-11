@@ -24,6 +24,13 @@ T *_Owned safe_malloc<T>(T t);
 // Safe free — frees an owned pointer
 void safe_free(void *_Owned);
 
+// Safe array malloc — allocates n contiguous T initialized to `initial`,
+// returns _Owned _ArrayElem (supports p[i]). See bsc-ownership §8.
+_Safe T *_Owned _ArrayElem safe_malloc_array<T>(size_t n, T initial);
+
+// Safe array free — frees an _Owned _ArrayElem (NOT interchangeable with safe_free)
+_Safe void safe_free_array(void *_Owned _ArrayElem);
+
 // Safe swap — swaps two borrowed values
 void safe_swap<T>(T* _Borrow left, T* _Borrow right);
 
@@ -31,7 +38,9 @@ void safe_swap<T>(T* _Borrow left, T* _Borrow right);
 void forget<T>(T t);
 ```
 
-**Important**: `safe_free` is NOT `_Safe` — calls to `safe_free` inside a `_Safe` function must be wrapped in an `_Unsafe {}` block.
+**Important**: `safe_free` is NOT `_Safe` — calls to `safe_free` inside a `_Safe` function must be wrapped in an `_Unsafe {}` block. `safe_malloc_array` and `safe_free_array` ARE `_Safe`, so they can be called directly from a `_Safe` function.
+
+**Match alloc/free**: `safe_malloc` ↔ `safe_free`, `safe_malloc_array` ↔ `safe_free_array`. Crossing the two pairs is a compile error — `T *_Owned` and `T *_Owned _ArrayElem` are distinct pointer categories. Likewise for raw conversion: `__move_to_raw` / `__take_from_raw` for `_Owned`; `__move_array_to_raw` / `__take_array_from_raw` for `_Owned _ArrayElem`.
 
 ### Usage Example
 

@@ -97,6 +97,19 @@ void f(void) {
 ```c
 int *_Owned p = safe_malloc(42);
 // p++;                    // error: no arithmetic on _Owned
+// p[3] = 0;               // error: no [] on plain _Owned
+```
+
+For a heap **array** that you want to subscript, use `T *_Owned _ArrayElem`
+(allocate with `safe_malloc_array`, free with `safe_free_array`). It supports
+`p[i]` but still forbids arithmetic — `_Owned _ArrayElem` is **not** a free
+upgrade to a C-style array pointer. See `bsc-ownership` §8.
+
+```c
+int *_Owned _ArrayElem arr = safe_malloc_array(10, 0);
+arr[3] = 3;                            // ok: _ArrayElem allows subscript
+// arr += 1;                           // error: still no arithmetic
+safe_free_array((void *_Owned _ArrayElem)arr);
 ```
 
 ## 3. Borrowing Mistakes

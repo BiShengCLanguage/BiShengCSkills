@@ -567,7 +567,6 @@ In BiSheng C, `_Safe` zones **forbid plain `&`** — you must use `&_Const` (imm
 | Passed to `void bar(T *_Borrow p)` | `&_Mut x` | Function may mutate through pointer |
 | `const` variable / string literal | `&_Const` only | Cannot use `&_Mut` — not modifiable |
 | Global variable (in `_Safe`) | `&_Const` only | `&_Mut` of globals forbidden in `_Safe` |
-| Function pointer | `&_Const` only | `&_Mut` for function pointer not allowed |
 
 #### Examples
 

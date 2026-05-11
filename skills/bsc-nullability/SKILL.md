@@ -61,6 +61,26 @@ _Safe void test(int *_Borrow _Nullable p, int *_Borrow _Nullable volatile vp) {
 }
 ```
 
+### Workaround: copy through a trackable local
+
+When you need to dereference an untrackable nullable pointer, first bind it to
+a **fresh local variable** (which is trackable by virtue of being a plain lvalue),
+then null-check and dereference the local:
+
+```c
+_Safe void use_untrackable(int *_Borrow _Nullable p, int *_Borrow _Nullable arr[]) {
+    int *_Borrow _Nullable t1 = identity(p);  // trackable temp
+    if (t1 != nullptr) { *t1 = 3; }           // ok
+
+    int *_Borrow _Nullable t3 = arr[1];       // trackable temp
+    if (t3 != nullptr) { *t3 = 5; }           // ok
+}
+```
+
+The temp must be a local variable — not a struct member, not another array
+element. This is the recommended pattern whenever you face an untrackable
+nullable pointer.
+
 ## 4. Nullability State Changes
 
 For **Nonnull-marked** pointers: state is always Nonnull. If null-checked, the null branch treats it as null (useful for `_Owned` leak prevention):
