@@ -5,7 +5,7 @@
   },
   "metadata": {
     "description": "BiSheng C language skills, planning agents, and BSC-specific usage logging for Claude Code.",
-    "version": "1.0.0"
+    "version": "1.0.1"
   },
   "plugins": [
     {
