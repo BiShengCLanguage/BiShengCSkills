@@ -1,6 +1,6 @@
 ---
 name: bsc-initialization
-description: "BiSheng C initialization analysis. When you need to understand uninitialized variable detection, field-level init tracking, __attribute__((ensure_init)), __assume_initialized, array initialization rules, or -uninit-check compiler option, use this Skill."
+description: "BiSheng C initialization analysis. When you need to understand uninitialized variable detection, field-level init tracking, __attribute__((ensure_init)), __attribute__((ensure_init_if_ret)), __assume_initialized, array initialization rules, or -uninit-check compiler option, use this Skill."
 ---
 
 # BiSheng C Initialization Analysis Skill
@@ -271,7 +271,105 @@ _Safe void indirect_call(InitFn fn) {
 }
 ```
 
-## 4. `__assume_initialized`
+## 4. `__attribute__((ensure_init_if_ret(arg)))`
+
+A **conditional** init contract: the pointed-to memory is only required to be
+initialized when the function **returns `arg`**. This models the common C idiom
+of an out-param that's filled only on success and left untouched on failure —
+which plain `ensure_init` (which demands init on *all* return paths) cannot
+express.
+
+```c
+// fills *info only when it returns 0
+_Safe unsigned int Init(Info *_Borrow __attribute__((ensure_init_if_ret(0))) info);
+
+_Safe unsigned int example(void) {
+    Info info;                                  // no redundant init needed
+    unsigned int ret = Init(&_Mut info);
+    if (ret != 0) return ret;                   // failure path: info still uninit
+    unsigned int size = GetSize(&_Const info);  // ok: on ret==0, info is initialized
+    return 0;
+}
+```
+
+Use this instead of pre-initializing the variable redundantly, or instead of an
+unsafe `__assume_initialized` (which would skip verifying the callee actually
+initializes it).
+
+### Declaration rules
+
+- **Parameters only** — not globals or locals.
+- The parameter must be a **raw pointer or mutable borrow to a non-`const` type**
+  (`int *`, `int *_Borrow`; not `const int *_Borrow`).
+- The function's **return type must be an integer type or `_Bool`**.
+- `arg` must be an **integer literal** (may be negative; not a float or char).
+- **Mutually exclusive with `ensure_init`** on the same parameter.
+
+### Redeclaration & function-pointer compatibility
+
+- Same-safety-level redeclarations must agree on presence **and** `arg`. If an
+  `_Unsafe` declaration carries it, the paired `_Safe` declaration's matching
+  parameter must carry it with the same `arg`.
+- Assigning a function **without** the contract to a function-pointer type that
+  **has** it is an error; the reverse (strong→weak) is allowed. If both sides
+  have it, the `arg` values must match.
+
+### Caller side
+
+You may take `&`/`&_Mut` of an uninitialized variable **only if** the resulting
+expression is passed **directly** as the `ensure_init_if_ret` argument (binding
+it to a borrow first is an error). After the call, the variable counts as
+initialized **only on the branch where the return value equals `arg`**:
+
+```c
+_Safe int bar(int *_Borrow __attribute__((ensure_init_if_ret(0))));
+
+_Safe void good(void) {
+    int a;
+    int res = bar(&_Mut a);
+    if (res != 0) return;     // bail on the non-arg path
+    int b = a;                // ok: here res==0, so a is initialized
+}
+_Safe void bad(void) {
+    int a;
+    (void)bar(&_Mut a);
+    int b = a;                // error: no return-value check, a may be uninit
+}
+```
+
+The return-value check may be written `e == v`, `e != v`, `v == e`, or `v != e`
+(`v` an integer/`_Bool` literal). `e` may be the call itself, or a variable that
+was assigned the call's result directly and not address-taken / re-borrowed /
+reassigned in between. (Sub-comparisons buried inside `&&`/`||` are **not**
+recognized as the check.)
+
+### Callee side
+
+`*p` starts uninitialized; on the "return `arg`" path it must be fully
+initialized (all struct fields) or it's an error. Repointing `p`, or assigning
+`p` to another pointer, is allowed but only **after** `*p` is initialized.
+
+```c
+typedef struct { int a; int b; } S;
+_Safe unsigned int ok(int a, S *_Borrow __attribute__((ensure_init_if_ret(0))) p) {
+    if (a == 2) return 1;       // return-1 path: no init required
+    p->a = 1; p->b = 2;
+    return 0;                   // return-0 path: fully initialized
+}
+```
+
+### Known limitations (conservative false errors)
+
+The check is a flow-sensitive reaching-definition analysis — no loop trip-count
+reasoning, no path correlation:
+- A loop body is treated as possibly executing 0 times, even with a constant
+  bound — initialize before the loop or use `do-while`.
+- Two separate `if`s testing the same variable are treated as independent —
+  merge the checks into one `if`.
+- Copying the return value into a local that is later reassigned / address-taken
+  drops the association with the call.
+
+## 5. `__assume_initialized`
 
 Built-in function to mark a variable as initialized at a program point. No contract verification — user guarantees correctness.
 
@@ -340,7 +438,7 @@ _Safe void example(int cond) {
 }
 ```
 
-## 5. Compiler Options
+## 6. Compiler Options
 
 `-uninit-check=<mode>`:
 

@@ -35,7 +35,7 @@ BiSheng C (BSC) is a **superset of C** with Rust-inspired memory safety, traits,
 | Borrowing | `_Borrow`, `_ArrayElem`, `&_Const`, `&_Mut` | Non-owning references with lifetime enforcement |
 | Nullability | `_Nullable`, `_Nonnull`, `nullptr` | Compile-time null-safety checking |
 | Safe zones | `_Safe`, `_Unsafe` | Compiler-enforced memory safety regions |
-| Initialization analysis | `__attribute__((ensure_init))`, `__assume_initialized` | Field-level uninitialized variable detection |
+| Initialization analysis | `__attribute__((ensure_init))`, `__attribute__((ensure_init_if_ret))`, `__assume_initialized` | Field-level uninitialized variable detection |
 | Coroutines | `_Async`, `_Await`, `Future` | Stackless coroutines with poll-based execution |
 | Scheduler | `Scheduler::init/spawn/run/destroy` | Thread-pool concurrent task execution |
 | constexpr | `constexpr`, `_Static_assert`, `if constexpr` | Compile-time evaluation and type-specialized branches |

@@ -106,6 +106,9 @@ private_t *_Borrow _Nonnull this = _Unsafe(
 - Step 2: `void *_Borrow → private_t *_Borrow` — explicit cast, wrapped in `_Unsafe(expr)`.
 - Direct `public_t *_Borrow → private_t *_Borrow` is **forbidden** (different pointed-to types).
 
+### Array decay to borrow pointers
+In assignment, argument passing, and return, an array `T[N]` can decay directly to a borrow pointer instead of a raw pointer when the target type is one of `T *_Borrow _ArrayElem`, `T *_Borrow`, `void *_Borrow`, or `void *_Borrow _ArrayElem`. The two `void *` forms require `T` to satisfy `is_trivial_data` **inside a safe zone** (else it's an error). Any other target makes the array decay to raw `T *` as in C. Decaying to a borrow counts as borrowing the first element, so the usual borrow-check rules apply. See `bsc-borrowing` §12.
+
 ### Raw pointer params/returns are allowed in signatures
 A `_Safe` function **may** have raw pointer params/returns, and may have structs with pointer members or union types as params/returns. The restrictions apply to *operations on* pointers inside the safe zone, not their presence in signatures.
 
@@ -138,17 +141,20 @@ _Safe void foo(void) {
 
 ### Type conversion rules
 - **No narrowing implicit casts** (`long` to `int`, `double` to `float`, `int` to `float`) — explicit cast required
-- **Compile-time constants** that fit the target type are exempt from narrowing restrictions
+- **Compile-time-known values** are exempt from narrowing restrictions: a compile-time constant, or an integer-typed expression whose value range the compiler can determine, may convert implicitly as long as the target type can represent every value in that range. BSC guarantees the range of bitwise `&`, `|`, `^` is tracked at compile time; tracking of other operators is implementation-defined. It does **not** track a plain integer variable's runtime range — that falls back to the full type range (e.g. `unsigned short = some_uint | 0x10;` is an error even though the value fits)
 - **No float-to-integer casts** (even explicit)
 - **Int-to-float** conversions are allowed explicitly in safe zones
 - **Enum conversions**: implicit enum-to-enum is forbidden; explicit is allowed only if target enum contains all values of source. Implicit enum-to-underlying-integer is allowed
 - **Comparison/logical operators** (`==`, `!=`, `>=`, `<=`, `>`, `<`, `&&`, `||`, `!`): results are `int` type (0 or 1) and may implicitly convert to other integer types
-- **if/while conditions**: any arithmetic type allowed (follows C rules)
+- **`if`/`while`/`do-while`/`for` conditions**: any arithmetic **or pointer** type is allowed (as in C). Using a value as a condition is **not** counted as an implicit conversion to `_Bool`, so a condition never triggers a narrowing-conversion error
 
 ### Union rules
-- **No union member access** (`.` read or write) — but unions can be declared, initialized, and passed as arguments
+- **No union member access of any kind** in a safe zone — not via `.`, and not via `->` through a raw, `_Owned`, or `_Borrow` pointer — for either read or write. **Taking a borrow of a union member** (`&_Mut u.x` / `&_Const u.x`) is also forbidden.
+- What **is** allowed: declaring/defining union variables, and holding raw or safe (`_Owned`/`_Borrow`) pointers *to* a union — you just can't reach through to a member. Member access works inside an `_Unsafe {}` escape.
 
 ### Other restrictions
+- **String-literal array init**: a `char` array initialized from a string literal must be at least as long as the literal **including** the trailing `\0` — `char a[3] = "abc";` is an error (needs 4), `char a[4] = "abc";` is ok
+- **Array subscript/deref is allowed**: although raw-pointer deref is forbidden, indexing or dereferencing an **array** lvalue (`arr[i]`, `*arr`) is fine — the compiler treats it as a direct array operation, not as deref of the decayed raw pointer
 - **No inline assembly**
 - **No calling unsafe functions** — must wrap in `_Unsafe {}`
 - **Empty params require `void`**: `_Safe void f(void)` — not `_Safe void f()`

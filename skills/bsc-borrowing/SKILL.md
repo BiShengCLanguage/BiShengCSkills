@@ -48,6 +48,11 @@ int *_Borrow mr = &_Mut x;           // mutable borrow — read/write
 
 From `_Owned` pointer: `&_Const *owned_ptr` or `&_Mut *owned_ptr`.
 
+`&_Mut *p` / `&_Const *p` **do not evaluate `*p`** — they just rebind to the
+object `p` points at. So `p` being null does **not** cause a dereference, and if
+`p` is an `_Owned` pointer its ownership is **not** moved. (`p` may be a raw,
+`_Owned`, or `_Borrow` pointer.)
+
 ## 3. Semantics
 
 | Type | Access | Aliasing |
@@ -74,7 +79,7 @@ void foo() {
 }
 ```
 
-Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, member access `p->field`.
+Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, member access `p->field`, assignment `q = p`, re-borrow `&_Mut *p` / `&_Const *p`, and type conversions of `p`. For a `_Borrow _ArrayElem` pointer, subscript `p[i]`, pointer arithmetic (`p + n`, `p += n`, `++p`, …), and pointer subtraction `p - q` are uses too.
 
 ## 5. Rules
 
@@ -87,7 +92,7 @@ Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, mem
 - Borrow variables must be initialized at declaration
 - Cannot be global variables or union members
 - `_Owned` and `_Borrow` cannot coexist on same pointer: `int *_Owned _Borrow` is illegal
-- No indexing (`p[i]`) and no pointer arithmetic (`p + n`, `p++`) on **plain** borrow pointers. For an array-element borrow, use `_Borrow _ArrayElem` (see §11) — that variant supports `[]`, `+`, `-`, `+=`, `-=`, `++`, `--`
+- No indexing (`p[i]`) and no pointer arithmetic (`p + n`, `p++`) on **plain** borrow pointers. For an array-element borrow, use `_Borrow _ArrayElem` (see §12) — that variant supports `[]`, `+`, `-`, `+=`, `-=`, `++`, `--`
 - Cannot use `_Borrow` pointer type as a generic type argument
 - No `_Trait` impl for borrow types; no member functions for borrow types
 - Cannot take borrow of a struct that itself contains borrow members
@@ -134,7 +139,7 @@ Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, mem
 ## 8. Additional Rules
 
 - Borrow pointers can be used in `if`/`while`/`do-while`/`for`/ternary conditions, but **NOT** in `switch`
-- Forbidden operators on **plain** borrow pointers: `-`, `~`, `[]`, `++`, `--`, `*`(arithmetic), `/`, `%`, `&`(bitwise), `|`, `<<`, `>>`, binary `+`, binary `-`. `_Borrow _ArrayElem` re-enables `[]`, binary `+`/`-`, `+=`/`-=`, `++`/`--` (see §11). The rest stay forbidden
+- Forbidden operators on **plain** borrow pointers: `-`, `~`, `[]`, `++`, `--`, `*`(arithmetic), `/`, `%`, `&`(bitwise), `|`, `<<`, `>>`, binary `+`, binary `-`. `_Borrow _ArrayElem` re-enables `[]`, binary `+`/`-`, `+=`/`-=`, `++`/`--` (see §12). The rest stay forbidden
 - Comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) is allowed between same-typed borrows. Top-level `const`/`volatile`/`restrict` on the pointee are ignored when comparing — `int *_Borrow` and `const int *_Borrow` are comparable
 - `sizeof(T *_Borrow) == sizeof(T *)` and the same for `_Alignof`. `_Borrow _ArrayElem` has the same size/alignment as `T *`
 - String literals auto-borrow to `const char *_Borrow` when passed to a `const char *_Borrow` parameter (compiler inserts `&_Const *`)
@@ -308,7 +313,7 @@ int main() {
 }
 ```
 
-## 11. `_Borrow _ArrayElem`: Borrowing Into Arrays
+## 12. `_Borrow _ArrayElem`: Borrowing Into Arrays
 
 Taking the address of an array element with `&_Mut arr[i]` or `&_Const arr[i]`
 yields a `_Borrow _ArrayElem` pointer. This is a borrow that **remembers it
@@ -335,6 +340,14 @@ Rules specific to `_Borrow _ArrayElem`:
 
 - Allowed operators: `[]`, binary `+`, `-`, `+=`, `-=`, `++`, `--`. All other
   plain-`_Borrow` restrictions still apply (no `*` arithmetic, no bitwise, etc.).
+- **Arithmetic produces a reborrow.** `p2 = p1 + 5` is treated as `&_Mut p1[5]`:
+  `p2` borrows the same array, so `p1` is **frozen** until `p2`'s lifetime ends.
+- **Pointer subtraction** between two same-type `_Borrow _ArrayElem` pointers is
+  allowed and yields the element distance: `int n = p2 - p1;`. (Comparison
+  carries over from plain `_Borrow` — see §8 — so `while (p <= end)` works.)
+- Multiple `[]`/`*` accesses through the **same** `_Borrow _ArrayElem` in one
+  statement (e.g. `p[0] = p[1] + p[2];`) are all counted as uses of `p` itself —
+  no temporary borrow is created, so this does not trip the borrow checker.
 - **Implicit downgrade** `T *_Borrow _ArrayElem` → `T *_Borrow` is allowed
   (equivalent to "take a fresh plain borrow at the current element"). The
   reverse explicit cast is **forbidden**.
@@ -343,6 +356,34 @@ Rules specific to `_Borrow _ArrayElem`:
   bare-pointer `_Unsafe` parameter, but cannot swap between `_Borrow` and
   `_Borrow _ArrayElem` once one is declared.
 - `sizeof(T *_Borrow _ArrayElem) == sizeof(T *)`.
+
+### 12.1 Array decay to borrow pointers
+
+Besides `&_Mut arr[i]`, a `_Borrow _ArrayElem` (or plain `_Borrow`) can also be
+produced by **array decay**. In assignment, argument passing, and return, an
+array with element type `T` decays to whichever of these the target type asks
+for, instead of decaying to a raw pointer:
+
+- `T *_Borrow _ArrayElem` / `const T *_Borrow _ArrayElem`
+- `T *_Borrow` / `const T *_Borrow`
+- `void *_Borrow` / `const void *_Borrow` — in a safe zone requires `T` to be `is_trivial_data`
+- `void *_Borrow _ArrayElem` / `const void *_Borrow _ArrayElem` — same `is_trivial_data` requirement
+
+Any other target type makes the array decay to raw `T *`, exactly as in C.
+Decaying to a borrow is treated as `&_Mut arr[0]` / `&_Const arr[0]`, so normal
+borrow-check rules apply.
+
+```c
+void take_elem(int *_Borrow _ArrayElem p);
+void take_borrow(int *_Borrow p);
+
+_Safe void foo(void) {
+    int arr[4] = {1, 2, 3, 4};
+    take_elem(arr);              // ok: decays to int *_Borrow _ArrayElem
+    take_borrow(arr);           // ok: decays to int *_Borrow
+    void *_Borrow vp = arr;     // ok: int is is_trivial_data
+}
+```
 
 Except for the operators above and these conversion rules, **everything else
 that applies to plain `_Borrow` (lifetime, freezing, NLL, nullability,

@@ -123,6 +123,7 @@ _Safe void foo(void) {
 - Logical operators (`!`, `&&`, `||`) work on `_Owned` pointers (null checks, no ownership consumed)
 - `_Owned` pointers can be conditions in `if`/`while`/`do-while`/`for`/ternary, but **NOT** `switch`
 - Implicit `_Owned` -> `_Bool` conversion is allowed (does not consume ownership)
+- An `_Owned` pointer may appear in a **comma expression** (`(a, p)`). Whether the comma expression consumes ownership depends on where the result is used: as an `if`/`while` condition it does **not** consume; as an initializer, assignment RHS, or call argument it **does** move ownership (e.g. `int *_Owned q = (++a, p);` moves `p` into `q`)
 
 ### `_Owned` with `_Trait` types
 - Implicit conversion: `S *_Owned` to `_Trait T *_Owned` if `S` implements `T`

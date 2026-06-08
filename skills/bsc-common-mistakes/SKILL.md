@@ -45,11 +45,16 @@ _Safe {
 ```
 
 ### 1.5 Union member access in safe zone
-Unions can be declared/initialized/passed, but member access is forbidden.
+Unions can be declared/initialized/passed and you may hold pointers (raw,
+`_Owned`, `_Borrow`) *to* a union, but **reaching a member is forbidden** — via
+`.`, via `->` (even through an `_Owned` or `_Borrow` pointer), and taking a
+borrow of a member (`&_Mut u.x`) is forbidden too.
 ```c
 _Safe {
     union U { int i; float f; } u = {.i = 1};
-    // int x = u.i;                   // error
+    // int x = u.i;                   // error: read via .
+    // u.i = 2;                       // error: write via .
+    // int *_Borrow b = &_Mut u.i;    // error: borrow of a member
     _Unsafe { int x = u.i; }          // ok: unsafe escape
 }
 ```
@@ -624,7 +629,7 @@ on a callee reading through a borrow of an in-scope `_Owned` local**, including:
 | `int x = i++` in `_Safe` | `i++` ok as statement; result is `void` |
 | `_Safe int f()` | `_Safe int f(void)` |
 | Partial init in safe | Required only for structs **with pointer fields** |
-| Union `.member` in safe | Forbidden — use `_Unsafe {}` escape |
+| Union member in safe (`.`/`->`/`&_Mut`) | Forbidden — use `_Unsafe {}` escape |
 | Cast categories in safe | No cross-casts (except `T *_Owned` to `void *_Owned`) |
 | `&_Mut` global in safe | Forbidden — only `&_Const` of globals |
 | `_Trait T var` | `_Trait T* ptr` |

@@ -42,6 +42,8 @@ void forget<T>(T t);
 
 **Match alloc/free**: `safe_malloc` ↔ `safe_free`, `safe_malloc_array` ↔ `safe_free_array`. Crossing the two pairs is a compile error — `T *_Owned` and `T *_Owned _ArrayElem` are distinct pointer categories. Likewise for raw conversion: `__move_to_raw` / `__take_from_raw` for `_Owned`; `__move_array_to_raw` / `__take_array_from_raw` for `_Owned _ArrayElem`.
 
+**`safe_malloc_array(0, ...)`**: a size of 0 returns a **non-null but non-dereferenceable** pointer. It still owns an allocation and **must** be freed with `safe_free_array`, or it leaks. `safe_malloc_array`/`safe_free_array` route through `malloc`/`free`, so an `_Owned _ArrayElem` may be converted to a raw pointer and `free`d, and a `malloc`'d raw pointer may be taken via `__take_array_from_raw` and freed with `safe_free_array`.
+
 ### Usage Example
 
 ```c
