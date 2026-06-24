@@ -144,7 +144,7 @@ _Safe void foo(void) {
 - **Compile-time-known values** are exempt from narrowing restrictions: a compile-time constant, or an integer-typed expression whose value range the compiler can determine, may convert implicitly as long as the target type can represent every value in that range. BSC guarantees the range of bitwise `&`, `|`, `^` is tracked at compile time; tracking of other operators is implementation-defined. It does **not** track a plain integer variable's runtime range — that falls back to the full type range (e.g. `unsigned short = some_uint | 0x10;` is an error even though the value fits)
 - **No float-to-integer casts** (even explicit)
 - **Int-to-float** conversions are allowed explicitly in safe zones
-- **Enum conversions**: implicit enum-to-enum is forbidden; explicit is allowed only if target enum contains all values of source. Implicit enum-to-underlying-integer is allowed
+- **Enum conversions**: implicit enum-to-enum is forbidden; explicit enum-to-enum is allowed only if the target enum contains all values of the source. **Enum-to-integer follows the same sign/width rules as int-to-int** (above): converting to the enum's own underlying type is always fine, but for a **fixed-underlying-type** enum (`enum E : T {…}`) an *implicit* conversion to a different integer type needs matching signedness and not-smaller range (or a compile-time-provable value fit) — a same-width opposite-sign conversion (e.g. `enum E : unsigned` → `int`) needs an explicit cast. Enums **without** a fixed underlying type keep C's loose conversion
 - **Comparison/logical operators** (`==`, `!=`, `>=`, `<=`, `>`, `<`, `&&`, `||`, `!`): results are `int` type (0 or 1) and may implicitly convert to other integer types
 - **`if`/`while`/`do-while`/`for` conditions**: any arithmetic **or pointer** type is allowed (as in C). Using a value as a condition is **not** counted as an implicit conversion to `_Bool`, so a condition never triggers a narrowing-conversion error
 
@@ -153,6 +153,7 @@ _Safe void foo(void) {
 - What **is** allowed: declaring/defining union variables, and holding raw or safe (`_Owned`/`_Borrow`) pointers *to* a union — you just can't reach through to a member. Member access works inside an `_Unsafe {}` escape.
 
 ### Other restrictions
+- **`static` locals are allowed** in a safe zone (previously rejected as "mutable globals"). Constraints: the variable **cannot** be `_Owned`, `_Borrow`, or an `_Owned struct` type (compile error), and — like a global — it can only be `&_Const`-borrowed, never `&_Mut`
 - **String-literal array init**: a `char` array initialized from a string literal must be at least as long as the literal **including** the trailing `\0` — `char a[3] = "abc";` is an error (needs 4), `char a[4] = "abc";` is ok
 - **Array subscript/deref is allowed**: although raw-pointer deref is forbidden, indexing or dereferencing an **array** lvalue (`arr[i]`, `*arr`) is fine — the compiler treats it as a direct array operation, not as deref of the decayed raw pointer
 - **No inline assembly**

@@ -90,13 +90,13 @@ Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, mem
 - Borrow lifetime <= borrowed value's lifetime (compiler enforced)
 - Cannot create borrow of a borrow: `int *_Borrow *_Borrow` is illegal
 - Borrow variables must be initialized at declaration
-- Cannot be global variables or union members
+- Cannot be global **or `static`** variables, nor union members
 - `_Owned` and `_Borrow` cannot coexist on same pointer: `int *_Owned _Borrow` is illegal
 - No indexing (`p[i]`) and no pointer arithmetic (`p + n`, `p++`) on **plain** borrow pointers. For an array-element borrow, use `_Borrow _ArrayElem` (see §12) — that variant supports `[]`, `+`, `-`, `+=`, `-=`, `++`, `--`
 - Cannot use `_Borrow` pointer type as a generic type argument
 - No `_Trait` impl for borrow types; no member functions for borrow types
 - Cannot take borrow of a struct that itself contains borrow members
-- Globals: in safe zones, only immutable borrows (`&_Const`) allowed; no mutable borrows of globals
+- Globals **and `static` variables**: in safe zones, only immutable borrows (`&_Const`) allowed; no mutable borrows (we can't track reads/writes of global/static storage across function signatures)
 - String literals: `&_Mut "hello"` is forbidden; `&_Mut * "hello"` is forbidden
 
 ### Reassignment rules

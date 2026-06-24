@@ -195,7 +195,7 @@ _Safe int main(void) {
 - `_Owned` pointer members inside the struct **must** be manually freed in the destructor
 - **Access modifiers**: `_Private` (default) and `_Public` — only members/functions inside the struct body can access `_Private` members; extension functions and external code can only access `_Public` members
 - **Partial move is prohibited**: at scope end, an `_Owned struct` must be either fully owned (nothing moved out) or entirely moved as a whole. Moving individual `_Owned` members while keeping the struct causes a compile error
-- Global `_Owned struct` variables do not have their destructors called (including function-local `static`)
+- Global `_Owned struct` variables do not have their destructors called. A function-local `static` variable **cannot** be `_Owned`, `_Borrow`, or an `_Owned struct` type at all — that's a compile error (so the question of running its destructor never arises)
 
 ### 7.2 Pitfall: Tagged-struct as union-replacement carries hidden cost
 

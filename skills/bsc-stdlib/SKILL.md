@@ -1,6 +1,6 @@
 ---
 name: bsc-stdlib
-description: "BiSheng C standard library core types (libcbs). When you need to understand safe_malloc, safe_free, safe_swap, forget, Vec<T>, String, LinkedList, Option, Result, or the libcbs design pattern, use this Skill."
+description: "BiSheng C standard library core types (libcbs). When you need to understand safe_malloc, safe_calloc, safe_free, safe_swap, forget, Vec<T>, String, LinkedList, Option, Result, or the libcbs design pattern, use this Skill."
 ---
 
 # BiSheng C Standard Library — Core Types
@@ -21,12 +21,19 @@ Core safety primitives used by all other libcbs types.
 // Safe malloc — allocates and initializes with value, returns _Owned pointer
 T *_Owned safe_malloc<T>(T t);
 
+// Safe calloc — zero-initializes (no initializer arg); freed with safe_free.
+// All fields (incl. pointer members) become zero/null. T must be zero-initable.
+T *_Owned safe_calloc<T>();
+
 // Safe free — frees an owned pointer
 void safe_free(void *_Owned);
 
 // Safe array malloc — allocates n contiguous T initialized to `initial`,
 // returns _Owned _ArrayElem (supports p[i]). See bsc-ownership §8.
 _Safe T *_Owned _ArrayElem safe_malloc_array<T>(size_t n, T initial);
+
+// Safe array calloc — n contiguous T, each zero-initialized; freed with safe_free_array
+_Safe T *_Owned _ArrayElem safe_calloc_array<T>(size_t n);
 
 // Safe array free — frees an _Owned _ArrayElem (NOT interchangeable with safe_free)
 _Safe void safe_free_array(void *_Owned _ArrayElem);
@@ -40,9 +47,11 @@ void forget<T>(T t);
 
 **Important**: `safe_free` is NOT `_Safe` — calls to `safe_free` inside a `_Safe` function must be wrapped in an `_Unsafe {}` block. `safe_malloc_array` and `safe_free_array` ARE `_Safe`, so they can be called directly from a `_Safe` function.
 
-**Match alloc/free**: `safe_malloc` ↔ `safe_free`, `safe_malloc_array` ↔ `safe_free_array`. Crossing the two pairs is a compile error — `T *_Owned` and `T *_Owned _ArrayElem` are distinct pointer categories. Likewise for raw conversion: `__move_to_raw` / `__take_from_raw` for `_Owned`; `__move_array_to_raw` / `__take_array_from_raw` for `_Owned _ArrayElem`.
+**`safe_calloc` vs `safe_malloc`**: `safe_calloc<T>()` takes **no** initializer — it zero-initializes everything, so pointer members come out `nullptr` (declare them `_Nullable`). `T` must be zero-initializable or it's a compile error. Same pairing as malloc: `safe_calloc` ↔ `safe_free`, `safe_calloc_array` ↔ `safe_free_array`.
 
-**`safe_malloc_array(0, ...)`**: a size of 0 returns a **non-null but non-dereferenceable** pointer. It still owns an allocation and **must** be freed with `safe_free_array`, or it leaks. `safe_malloc_array`/`safe_free_array` route through `malloc`/`free`, so an `_Owned _ArrayElem` may be converted to a raw pointer and `free`d, and a `malloc`'d raw pointer may be taken via `__take_array_from_raw` and freed with `safe_free_array`.
+**Match alloc/free**: `safe_malloc`/`safe_calloc` ↔ `safe_free`, `safe_malloc_array`/`safe_calloc_array` ↔ `safe_free_array`. Crossing the two pairs is a compile error — `T *_Owned` and `T *_Owned _ArrayElem` are distinct pointer categories. Likewise for raw conversion: `__move_to_raw` / `__take_from_raw` for `_Owned`; `__move_array_to_raw` / `__take_array_from_raw` for `_Owned _ArrayElem`.
+
+**`safe_malloc_array(0, ...)` / `safe_calloc_array(0)`**: a size of 0 returns a **non-null but non-dereferenceable** pointer. It still owns an allocation and **must** be freed with `safe_free_array`, or it leaks. The array allocators route through `malloc`/`calloc`/`free`, so an `_Owned _ArrayElem` may be converted to a raw pointer and `free`d, and a `malloc`/`calloc`'d raw pointer may be taken via `__take_array_from_raw` and freed with `safe_free_array`.
 
 ### Usage Example
 
@@ -208,7 +217,7 @@ _Safe void MyType<T>::method(MyType<T> *_Borrow this, ...) {
 
 | Header | Types Provided |
 |--------|---------------|
-| `bishengc_safety.hbs` | `safe_malloc`, `safe_free`, `safe_swap`, `forget` |
+| `bishengc_safety.hbs` | `safe_malloc`, `safe_calloc`, `safe_free`, `safe_malloc_array`, `safe_calloc_array`, `safe_free_array`, `safe_swap`, `forget` |
 | `vec.hbs` | `Vec<T>` |
 | `string.hbs` | `String` |
 | `list.hbs` | `LinkedList<T>` |

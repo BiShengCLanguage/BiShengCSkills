@@ -247,7 +247,7 @@ Same safety-level redeclarations must be consistent (both have `ensure_init` or 
 
 ### Function pointer compatibility
 
-`ensure_init` is part of the function type. Cannot assign a non-`ensure_init` function to an `ensure_init` function pointer:
+`ensure_init` is part of the function type. In a **safe zone** you cannot turn a non-`ensure_init` function into one that needs `ensure_init` — neither by assignment **nor by an explicit cast** (no contract laundering). In an `_Unsafe` zone the explicit cast is allowed (the user takes responsibility):
 
 ```c
 typedef _Safe void (*InitFn)(int *__attribute__((ensure_init)) _Borrow out);
@@ -256,8 +256,12 @@ _Safe void has_attr(int *__attribute__((ensure_init)) _Borrow out) { *out = 1; }
 _Safe void no_attr(int *_Borrow out) { *out = 1; }
 
 _Safe void test(void) {
-    InitFn fn = has_attr;  // ok
-    // InitFn fn2 = no_attr;  // error: missing ensure_init
+    InitFn fn = has_attr;             // ok
+    // InitFn fn2 = no_attr;          // error: missing ensure_init
+    // InitFn fn3 = (InitFn)no_attr;  // error: explicit cast can't launder it either
+    _Unsafe {
+        InitFn fn4 = (InitFn)no_attr; // ok: unsafe zone — user's responsibility
+    }
 }
 ```
 
