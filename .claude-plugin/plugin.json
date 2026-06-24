@@ -1,6 +1,6 @@
 {
   "name": "bisheng-c-skills",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "BiSheng C (BSC) language skills, planning agents, and BSC-specific usage logging for Claude Code.",
   "author": {
     "name": "BiSheng C"
