@@ -19,14 +19,14 @@ Core safety primitives used by all other libcbs types.
 #include "bishengc_safety.hbs"
 
 // Safe malloc — allocates and initializes with value, returns _Owned pointer
-T *_Owned safe_malloc<T>(T t);
+_Safe T *_Owned safe_malloc<T>(T t);
 
 // Safe calloc — zero-initializes (no initializer arg); freed with safe_free.
 // All fields (incl. pointer members) become zero/null. T must be zero-initable.
-T *_Owned safe_calloc<T>();
+_Safe T *_Owned safe_calloc<T>();
 
 // Safe free — frees an owned pointer
-void safe_free(void *_Owned);
+_Safe void safe_free(void * _Nullable _Owned p);
 
 // Safe array malloc — allocates n contiguous T initialized to `initial`,
 // returns _Owned _ArrayElem (supports p[i]). See bsc-ownership §8.
@@ -39,13 +39,13 @@ _Safe T *_Owned _ArrayElem safe_calloc_array<T>(size_t n);
 _Safe void safe_free_array(void *_Owned _ArrayElem);
 
 // Safe swap — swaps two borrowed values
-void safe_swap<T>(T* _Borrow left, T* _Borrow right);
+_Safe void safe_swap<T>(T* _Borrow left, T* _Borrow right);
 
 // Forget — takes ownership and drops without running destructor
-void forget<T>(T t);
+_Safe void forget<T>(T t);
 ```
 
-**Important**: `safe_free` is NOT `_Safe` — calls to `safe_free` inside a `_Safe` function must be wrapped in an `_Unsafe {}` block. `safe_malloc_array` and `safe_free_array` ARE `_Safe`, so they can be called directly from a `_Safe` function.
+**All `safe_*` functions are `_Safe`** — `safe_malloc`, `safe_calloc`, `safe_free`, `safe_malloc_array`, `safe_calloc_array`, `safe_free_array`, `safe_swap`, and `forget` can all be called **directly** from a `_Safe` function with **no `_Unsafe` wrap**. Only **raw** `malloc`/`free` need `_Unsafe`. (`safe_free`/`safe_free_array` still need the argument cast to `void *_Owned` / `void *_Owned _ArrayElem`.)
 
 **`safe_calloc` vs `safe_malloc`**: `safe_calloc<T>()` takes **no** initializer — it zero-initializes everything, so pointer members come out `nullptr` (declare them `_Nullable`). `T` must be zero-initializable or it's a compile error. Same pairing as malloc: `safe_calloc` ↔ `safe_free`, `safe_calloc_array` ↔ `safe_free_array`.
 
@@ -65,9 +65,7 @@ _Safe void example(void) {
     int b = 2;
     safe_swap(&_Mut a, &_Mut b);  // a=2, b=1
 
-    _Unsafe {
-        safe_free((void *_Owned)p);
-    }
+    safe_free((void *_Owned)p);   // _Safe — no _Unsafe wrap needed (cast still required)
 }
 ```
 
