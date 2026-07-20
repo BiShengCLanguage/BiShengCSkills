@@ -34,20 +34,23 @@ jobs:
           sparse-checkout: clang/test/BSC
           filter: blob:none
 
-      # TODO(GATE 4 — compiler distribution, decide one of):
-      #   a) actions/cache a prebuilt BSC clang keyed on the compiler repo SHA
-      #      (first run builds ~1-2h with cmake+ninja per manual §1.1, later
-      #      runs restore in minutes);
-      #   b) publish a release binary/tarball from the compiler repo and
-      #      download it here;
-      #   c) a prebuilt container image with the toolchain baked in.
-      # Until then this workflow fails fast at the check below.
-      - name: Locate BSC compiler
+      # Prebuilt toolchain from the compiler repo's daily release
+      # (build-compiler-release.yml publishes rolling prerelease `bsc-nightly`
+      # with asset bsc-clang-linux-x64.tar.gz).
+      - name: Download prebuilt BSC toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "${BSC_CLANG:-}" ] || [ ! -x "${BSC_CLANG:-/nonexistent}" ]; then
-            echo "::error::No BSC compiler available in CI yet — see TODO(GATE 4) in this workflow."
+          if ! gh release download bsc-nightly \
+                 --repo BiShengCLanguage/BiShengCLanguage \
+                 -p 'bsc-clang-linux-x64.tar.gz'; then
+            echo "::error::No bsc-nightly release found on BiShengCLanguage/BiShengCLanguage — run build-compiler-release.yml there first."
             exit 1
           fi
+          tar xzf bsc-clang-linux-x64.tar.gz
+          echo "BSC_CLANG=$GITHUB_WORKSPACE/bsc-install/bin/clang" >> "$GITHUB_ENV"
+          echo "BSC_LIBCBS=$GITHUB_WORKSPACE/bsc-install/libcbs-src" >> "$GITHUB_ENV"
+          "$GITHUB_WORKSPACE/bsc-install/bin/clang" --version
 
       - uses: actions/setup-node@v4
         with:
