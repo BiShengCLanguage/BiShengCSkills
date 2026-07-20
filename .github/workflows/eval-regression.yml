@@ -1,0 +1,76 @@
+name: eval-regression
+
+# Full bare-vs-skill eval sweep over evals/corpus.json.
+# Manual for now; flip on the schedule once the compiler-acquisition question
+# below is settled and cost per sweep is known.
+on:
+  workflow_dispatch:
+    inputs:
+      ids:
+        description: "Comma-separated eval ids (empty = full corpus)"
+        required: false
+        default: ""
+      n:
+        description: "Reps per eval per arm"
+        required: false
+        default: "3"
+      model:
+        description: "Model for generation"
+        required: false
+        default: "sonnet"
+  # schedule:
+  #   - cron: "0 2 * * 1"   # weekly, Monday 02:00 UTC — enable after GATE 4
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: BiShengCLanguage/BiShengCLanguage
+          path: main-repo
+          sparse-checkout: clang/test/BSC
+          filter: blob:none
+
+      # TODO(GATE 4 — compiler distribution, decide one of):
+      #   a) actions/cache a prebuilt BSC clang keyed on the compiler repo SHA
+      #      (first run builds ~1-2h with cmake+ninja per manual §1.1, later
+      #      runs restore in minutes);
+      #   b) publish a release binary/tarball from the compiler repo and
+      #      download it here;
+      #   c) a prebuilt container image with the toolchain baked in.
+      # Until then this workflow fails fast at the check below.
+      - name: Locate BSC compiler
+        run: |
+          if [ -z "${BSC_CLANG:-}" ] || [ ! -x "${BSC_CLANG:-/nonexistent}" ]; then
+            echo "::error::No BSC compiler available in CI yet — see TODO(GATE 4) in this workflow."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run evals
+        env:
+          # Repo/org secret; generation calls the Anthropic API.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_MODEL: ${{ inputs.model }}
+        run: |
+          args=""
+          [ -n "${{ inputs.ids }}" ] && args="--ids ${{ inputs.ids }}"
+          evals/run.sh $args --n "${{ inputs.n }}" --out results-out
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: |
+            results-out/results.json
+            results-out/results.md
+            results-out/runs.jsonl
