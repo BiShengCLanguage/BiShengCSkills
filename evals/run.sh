@@ -34,12 +34,14 @@ PARALLEL=${EVAL_PARALLEL:-4}
 TIMEOUT=${EVAL_TIMEOUT:-600}
 MAX_TURNS=${EVAL_MAX_TURNS:-25}
 
+REJUDGE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ids)    IDS=$2; shift 2 ;;
     --n)      N=$2; shift 2 ;;
     --out)    OUT=$2; shift 2 ;;
     --corpus) CORPUS=$2; shift 2 ;;
+    --rejudge) REJUDGE=1; shift ;;
     *) echo "run.sh: unknown arg $1" >&2; exit 64 ;;
   esac
 done
@@ -49,6 +51,24 @@ for dep in jq claude; do
 done
 [ -n "${BSC_CLANG:-}" ] && [ -x "$BSC_CLANG" ] || { echo "run.sh: BSC_CLANG must point to a BiSheng C clang" >&2; exit 78; }
 jq -e '.evals | length > 0' "$CORPUS" >/dev/null || { echo "run.sh: bad corpus: $CORPUS" >&2; exit 65; }
+
+if [ "$REJUDGE" = "1" ]; then
+  # Re-run judge.sh over the existing solutions of a previous --out directory
+  # and rebuild the aggregates. Useful after judge/environment fixes: no
+  # regeneration, no API cost.
+  [ -n "$OUT" ] && [ -d "$OUT/records" ] || { echo "run.sh: --rejudge needs --out pointing at a previous results dir" >&2; exit 65; }
+  for rec in "$OUT"/records/*.json; do
+    id=$(jq -r .id "$rec"); arm=$(jq -r .arm "$rec"); rep=$(jq -r .rep "$rec")
+    sol=$OUT/runs/$id/$arm/$rep/solution.cbs
+    if [ -f "$sol" ] && "$EVALS_DIR/judge.sh" "$sol" > "$OUT/runs/$id/$arm/$rep/judge.log" 2>&1; then
+      pass=true
+    else
+      pass=false
+    fi
+    jq --argjson pass "$pass" '.pass = $pass' "$rec" > "$rec.tmp" && mv "$rec.tmp" "$rec"
+    echo "[rejudge $id/$arm/$rep] pass=$pass" >&2
+  done
+else
 
 [ -n "$OUT" ] || OUT=$EVALS_DIR/results/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$OUT/records" "$OUT/runs"
@@ -146,6 +166,8 @@ for id in $SELECTED; do
   done
 done
 wait
+
+fi  # end of generation (skipped under --rejudge)
 
 cat "$OUT"/records/*.json > "$OUT/runs.jsonl"
 

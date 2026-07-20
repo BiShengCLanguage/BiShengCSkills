@@ -46,6 +46,21 @@ if [ -n "$sysroot" ]; then
   extra="-isysroot $sysroot $extra"
 fi
 
+# libcbs headers (bishengc_safety.hbs, vec, string, ...) — the skills teach
+# code that includes these, so the judge must be able to find them.
+# BSC_LIBCBS overrides; default guesses <llvm-root>/libcbs/src next to a
+# build-tree BSC_CLANG (<root>/build/bin/clang).
+libcbs=${BSC_LIBCBS:-}
+if [ -z "$libcbs" ]; then
+  guess=$(dirname "$(dirname "$(dirname "$BSC_CLANG")")")/libcbs/src
+  [ -d "$guess" ] && libcbs=$guess
+fi
+if [ -n "$libcbs" ] && [ -d "$libcbs" ]; then
+  for d in "$libcbs"/*/; do
+    extra="$extra -I${d%/}"
+  done
+fi
+
 case "$mode" in
   syntax)
     # shellcheck disable=SC2086
