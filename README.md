@@ -154,12 +154,24 @@ The `errors/` directory contains comprehensive documentation for all BSC compile
 - `errors/ai/bsc-errors.schema.json` — JSON schema
 - `errors/ai/error-code-mapping.json` — Diagnostic name to error code mapping
 
+## Evals
+
+`evals/` holds a compile-judged benchmark measuring whether these skills
+actually improve BSC code generation: 33 natural-language tasks across 8
+feature areas, each grounded in a real `clang/test/BSC/Positive/` test from
+the compiler repo. `run.sh` A/B-tests bare model vs with-skills (plus a
+skill-trigger hit-rate metric); `judge.sh` compiles every generated file with
+a real BSC clang — the compiler is the only judge. See
+[`evals/README.md`](evals/README.md). CI runs structural lint and a real
+plugin load test on every PR (`.github/workflows/lint-skills.yml`).
+
 ## Project Structure
 
 ```
 BiShengCSkills/
 ├── install.sh                          ← one-command installer
 ├── README.md
+├── evals/                              ← compile-judged benchmark (corpus, judge, A/B runner)
 ├── skills/
 │   ├── bsc-overview/SKILL.md
 │   ├── bsc-design/SKILL.md
