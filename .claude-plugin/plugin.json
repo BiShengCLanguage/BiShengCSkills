@@ -5,7 +5,7 @@
   "author": {
     "name": "BiSheng C"
   },
-  "homepage": "https://gitee.com/bisheng_c_language_dep/BiShengCSkills",
-  "repository": "https://gitee.com/bisheng_c_language_dep/BiShengCSkills",
+  "homepage": "https://github.com/BiShengCLanguage/BiShengCSkills",
+  "repository": "https://github.com/BiShengCLanguage/BiShengCSkills",
   "keywords": ["bisheng-c", "bsc", "c", "ownership", "memory-safety"]
 }
