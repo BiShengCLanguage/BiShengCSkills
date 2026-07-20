@@ -1,5 +1,7 @@
 # BiSheng C Skills
 
+> **Repository locations**: [GitHub (`BiShengCLanguage/BiShengCSkills`)](https://github.com/BiShengCLanguage/BiShengCSkills) is the **primary repository (single source of truth)**. The [Gitee repository](https://gitee.com/bisheng_c_language_dep/BiShengCSkills) is a **read-only mirror**. Please open issues and pull requests on GitHub.
+
 AI Skills for BiSheng C (BSC) — a memory-safe superset of C with Rust-inspired ownership, borrowing, traits, generics, and async/await.
 
 These Skills enable AI coding tools to generate syntactically and semantically correct BSC code, despite never having been trained on it.
@@ -10,19 +12,19 @@ These Skills enable AI coding tools to generate syntactically and semantically c
 
 ```bash
 # Install for all tools (Claude, Cursor, Windsurf, OpenCode, Copilot, Codex)
-curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BiShengCLanguage/BiShengCSkills/master/install.sh | bash
 
 # Install for a specific tool only
-curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a claude
-curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a cursor
-curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a opencode
-curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a codex
+curl -fsSL https://raw.githubusercontent.com/BiShengCLanguage/BiShengCSkills/master/install.sh | bash -s -- -a claude
+curl -fsSL https://raw.githubusercontent.com/BiShengCLanguage/BiShengCSkills/master/install.sh | bash -s -- -a cursor
+curl -fsSL https://raw.githubusercontent.com/BiShengCLanguage/BiShengCSkills/master/install.sh | bash -s -- -a opencode
+curl -fsSL https://raw.githubusercontent.com/BiShengCLanguage/BiShengCSkills/master/install.sh | bash -s -- -a codex
 ```
 
 ### If you prefer to clone first
 
 ```bash
-git clone git@gitee.com:bisheng_c_language_dep/BiShengCSkills.git
+git clone git@github.com:BiShengCLanguage/BiShengCSkills.git
 cd BiShengCSkills
 bash install.sh -a claude    # Claude Code CLI / VSCode extension
 bash install.sh -a cursor    # Cursor IDE
@@ -55,7 +57,7 @@ Two install modes for Claude Code:
 ```bash
 # Run from inside your project directory
 cd my-bsc-project
-curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a claude-plugin
+curl -fsSL https://raw.githubusercontent.com/BiShengCLanguage/BiShengCSkills/master/install.sh | bash -s -- -a claude-plugin
 ```
 
 **Run this from your project's root directory.** The installer writes `CLAUDE.md` into `$PWD` — running it from the wrong directory will put `CLAUDE.md` in the wrong place. Not the installer's job to second-guess you.
