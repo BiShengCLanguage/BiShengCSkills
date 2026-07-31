@@ -41,6 +41,32 @@ _Safe void full(void) {
 }
 ```
 
+**Empty structs are vacuously initialized.** A struct with no initializable
+storage — no fields at all, or recursively only fields of such empty structs —
+is treated as already initialized: a local of such a type can be read whole
+without any assignment, and such a member never blocks the enclosing struct's
+auto-promotion. Unnamed bit-fields (`unsigned : 3;`) still occupy storage, so a
+struct containing one is **not** vacuous and stays subject to normal tracking.
+
+```c
+struct Empty { };
+struct Wrap { struct Empty inner; };   // recursively empty → vacuous
+struct Outer { struct Empty e; struct Wrap w; int n; };
+
+_Safe void empty_ok(void) {
+    struct Outer o;
+    o.n = 1;
+    struct Empty x = o.e;   // ok: no storage to initialize
+    struct Outer c = o;     // ok: e and w vacuous, n set → o promotes
+}
+
+struct Bits { unsigned : 3; };
+_Safe void bits_err(void) {
+    struct Bits b;
+    struct Bits c = b;      // error: use of uninitialized value: `b`
+}
+```
+
 ### Rule 3: All control-flow paths must initialize
 
 ```c
@@ -243,7 +269,7 @@ void init_delegated(int *__attribute__((ensure_init)) out) {
 
 ### Redeclaration rules
 
-Same safety-level redeclarations must be consistent (both have `ensure_init` or neither). Different safety levels (`_Safe` vs non-safe) are independent overloads where differences are allowed.
+Same safety-level redeclarations must be consistent (both have `ensure_init` or neither). Across safety levels the **unsafe-safe refinement relation** applies (see `bsc-safe-zone` §5): `ensure_init` / `ensure_init_if_ret` are *sticky* attributes — the `_Safe` declaration may carry one that the `_Unsafe` declaration omits, but an `_Unsafe` declaration may not carry one the `_Safe` declaration lacks, and if both carry it they must match.
 
 ### Function pointer compatibility
 

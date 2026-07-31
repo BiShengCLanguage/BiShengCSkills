@@ -1,6 +1,6 @@
 ---
 name: bsc-safe-zone
-description: "BiSheng C safe zones. When you need to understand _Safe functions, _Safe blocks, _Unsafe escape blocks, safe zone restrictions (initialization, pointers, type casts, enum/float conversions, ++/-- semantics), trait/generic safety, member function safety, or mixed safe/unsafe patterns, use this Skill."
+description: "BiSheng C safe zones. When you need to understand _Safe functions, _Safe blocks, _Unsafe escape blocks, safe zone restrictions (initialization, pointers, type casts, enum/float conversions, ++/-- semantics), trait/generic safety, member function safety, mixed safe/unsafe redeclarations, the unsafe-safe refinement relation, or BSC type compatibility (sticky vs non-sticky qualifiers), use this Skill."
 ---
 
 # BiSheng C Safe Zones Skill
@@ -173,33 +173,145 @@ _Safe void foo(void) {
 - `_Safe` generic functions: all instantiations are checked for safety
 - Member functions can also be `_Safe`/`_Unsafe` modified with same rules as global functions
 
-## 5. Mixed-Mode Declarations (_Safe/_Unsafe overloading)
+## 5. Redeclaration & Mixed Mode (_Safe/_Unsafe overloading)
 
-The same function can have both `_Safe` and `_Unsafe` declarations:
+The same function name can have multiple declarations, mixing `_Safe` and
+`_Unsafe`, **in any order** (unsafe-first or safe-first both work):
 
 ```c
-_Unsafe int* foo(int* p);              // unsafe version
-_Safe int* _Owned foo(int* _Owned p);  // safe version: adds _Owned
+void f1(int *p, int a, int *q);                       // unsafe version first
+_Safe void f1(int *_Owned p, int a, int *_Borrow q);  // ok: safe version added
+
+_Safe void f2(int *_Borrow p);  // safe version first
+void f2(int *p);                // ok: unsafe version added
 ```
 
-- `_Safe` declaration may **add** `_Owned`, `_Borrow`, `_Owned _ArrayElem`, or `_Borrow _ArrayElem` to raw pointer params/returns. `_Owned _ArrayElem` and `_Borrow _ArrayElem` are added as **whole units** — you cannot upgrade a plain `_Owned` to `_Owned _ArrayElem` across declarations.
-- Must **not remove** qualifiers present in the `_Unsafe` declaration, nor swap `_Owned` for `_Borrow` (and vice versa). Standard C qualifiers (`const`, `volatile`, …) on the **return type** must also be preserved; on **parameter types** they are stripped for compatibility.
-- In safe context, only `_Safe` overload is callable. In unsafe context, `_Safe` version preferred when types match.
-- **Generic functions do NOT support mixed mode**
-- If a function has multiple declarations of the same safety level, they must be consistent
+Declaration-checking rules:
+
+- **Same safety level** → the declarations' types must be *compatible* (see §5.2)
+  and the compiler **merges** them into one type.
+- **Across safety levels** → the `_Unsafe` declaration's type must satisfy the
+  **unsafe-safe refinement relation** toward the `_Safe` declaration's type
+  (see §5.1). The two declarations are kept **separate**, not merged.
+- The **definition** may be written as either the `_Safe` or the `_Unsafe`
+  version, regardless of which declarations exist.
+- **Generic functions do NOT support mixed mode** — a generic cannot have both
+  `_Safe` and `_Unsafe` declarations/definitions.
+
+### 5.1 The unsafe-safe refinement relation
+
+Guiding idea: the `_Safe` declaration carries the *most precise* qualifiers;
+the `_Unsafe` declaration may be a "stripped" view of it. Formally, the
+`_Unsafe` type must equal the `_Safe` type after removing BSC safety
+qualifiers/attributes. Per pointer position:
+
+- **Sticky safety qualifiers** `_Owned`, `_Borrow`, `_Owned _ArrayElem`,
+  `_Borrow _ArrayElem` (each `_ArrayElem` pair is judged as a **whole unit**)
+  and the init-analysis attributes `ensure_init` / `ensure_init_if_ret`:
+  the `_Unsafe` declaration may **omit** one the `_Safe` declaration has, but
+  may not carry one the `_Safe` declaration lacks, and if both carry one they
+  must **match exactly** (no `_Owned` ↔ `_Borrow` swap, no `_Owned` →
+  `_Owned _ArrayElem` upgrade).
+- **Nullability**: an `_Unsafe` `_Nonnull` pointer cannot pair with a `_Safe`
+  `_Nullable` one (the safe side must not weaken the contract).
+- **Non-sticky qualifiers** (`const`, `volatile`, `restrict`, `_Atomic`) on a
+  pointer must be **identical** on both declarations.
+- Parameter count and ellipsis use must match; each parameter (after the usual
+  array→pointer / function→pointer adjustment) and the return type must
+  themselves satisfy the relation.
+
+```c
+      void f4(int *p);
+_Safe void f4(int *_Owned p);   // ok: safe side adds _Owned
+      void f6(int *_Owned p);
+_Safe void f6(int *_Borrow p);  // error: _Owned vs _Borrow mismatch
+      void f8(struct S *_Borrow p);
+_Safe void f8(struct S *_Borrow _ArrayElem p);  // error: cannot upgrade to _ArrayElem
+      void f12(int * _Nonnull p);
+_Safe void f12(int *_Borrow _Nullable p);       // error: _Nonnull → _Nullable
+```
+
+### 5.2 Type compatibility (BSC extensions) & sticky qualifiers
+
+BSC extends C's type-compatibility rules (used for merging declarations,
+assignment checking, ternary/pointer comparison operands, cross-TU tag types):
+
+- Function types are compatible only if they have the **same `_Safe`/`_Unsafe`**
+  safety — a `_Safe` function type and an `_Unsafe` one are never compatible.
+- Type **attributes** (e.g. `ensure_init`) participate in compatibility, not
+  just qualifiers.
+- Pointer types are compared after **filling in default nullability**: raw
+  pointers default `_Nullable`; `_Owned`/`_Borrow` default `_Nonnull`. So
+  `int *` ≡ `int * _Nullable`, `int *_Borrow` ≡ `int *_Borrow _Nonnull`, but
+  `int *_Owned` ≢ `int *_Owned _Nullable`.
+- Qualifier/attribute classification: **sticky** = `_Owned`, `_Borrow`,
+  `_ArrayElem`, `_Nullable`, `_Nonnull`, `ensure_init`, `ensure_init_if_ret`
+  (cannot be added or dropped in a value assignment `T x = e`); **non-sticky**
+  = `const`, `volatile`, `restrict`, `_Atomic` (freely added/dropped at the
+  top level on value passing). Simple assignment, ternary operands, pointer
+  subtraction/comparison compare pointee types *after stripping non-sticky*
+  qualifiers, and every non-sticky qualifier on the source pointee must also
+  appear on the destination pointee.
+- Function **parameters** are adjusted before comparison: arrays → pointers,
+  function types → function pointers, top-level non-sticky qualifiers dropped,
+  default nullability filled in. So `void f(int a[10])` ≡ `void f(int *a)` and
+  `void f(const int a)` ≡ `void f(int a)`.
+- struct/union/enum compatibility follows C11 tag rules (same tag; if both
+  complete: same members/order/bit-field widths/alignment/enum values).
+  Different or anonymous tags are incompatible even with identical bodies.
+
+### 5.3 Call resolution
+
+- **Safe context**: a call by function name uses **only** the `_Safe`
+  declaration(s). If the function has no `_Safe` declaration, the call is an
+  error.
+- **Unsafe context**: the `_Safe` declaration is tried **first**; if the
+  arguments don't match it, the call falls back to the `_Unsafe` declaration;
+  if neither matches, error.
+
+```c
+      void f1(int *p);
+_Safe void f1(int *_Borrow p);
+void f2(int *p);   // unsafe-only
+
+_Safe void foo(void) {
+    int a = 0;
+    int *_Borrow p = &_Mut a;
+    f1(p);    // ok: matches the _Safe declaration
+    f2(&a);   // error: f2 has no _Safe declaration
+}
+void bar(int *p1, int *_Owned p2) {
+    f1(p1);   // ok: raw arg falls back to the _Unsafe declaration
+    f1(p2);   // error: int *_Owned matches neither declaration
+}
+```
 
 ## 6. Function Pointer Rules
 
-- `_Safe` function pointers can only be assigned from functions that have a `_Safe` declaration
-- `_Unsafe` function pointers can be assigned from either `_Safe` or `_Unsafe` functions (if types are compatible)
+Assigning a function **name** (or `&name`) to a function pointer:
+
+- A **`_Safe` function pointer** requires the function to have a `_Safe`
+  declaration whose type is *compatible* with the pointee type.
+- An **`_Unsafe` function pointer** requires the function to have an
+  `_Unsafe` declaration whose type is compatible. A safe-only function cannot
+  be assigned to an unsafe function pointer — add an `_Unsafe` redeclaration
+  if you need that.
+
+(Assigning any other expression follows the normal assignment-compatibility
+rules of §5.2.)
 
 ```c
-_Safe void safe_fn(void);
-_Unsafe void unsafe_fn(void);
+      void f1(int *p);           // _Unsafe declaration
+_Safe void f1(int *_Borrow p);   // _Safe declaration
 
-_Safe void (*sp)(void) = nullptr;
-sp = safe_fn;    // ok
-sp = unsafe_fn;  // error: no _Safe declaration available
+typedef _Safe void (*SafeFP)(int *_Borrow);
+SafeFP sp = f1;                  // ok: compatible _Safe declaration exists
+
+typedef void (*UnsafeFP)(int *);
+UnsafeFP up = f1;                // ok: compatible _Unsafe declaration exists
+
+typedef _Safe void (*SafeFP2)(int *_Owned);
+SafeFP2 sp2 = f1;                // error: _Safe declaration is _Borrow, not _Owned
 ```
 
 ## 7. Complete Example

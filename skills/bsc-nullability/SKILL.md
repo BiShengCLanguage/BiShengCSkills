@@ -34,6 +34,14 @@ int *_Borrow p6 = &_Mut a;           // _Borrow is Nonnull by default
 int *_Owned p7 = safe_malloc<int>(5); // _Owned is Nonnull by default
 ```
 
+**Nullability in type compatibility**: `_Nullable`/`_Nonnull` are *sticky*
+qualifiers and participate in type-compatibility checks, but the compiler
+fills in the **default** first — so `int *` is compatible with
+`int * _Nullable`, and `int *_Borrow` with `int *_Borrow _Nonnull`, while
+`int *_Owned` is **not** compatible with `int *_Owned _Nullable`. In mixed
+`_Safe`/`_Unsafe` redeclarations, an `_Unsafe` `_Nonnull` parameter cannot
+pair with a `_Safe` `_Nullable` one (see `bsc-safe-zone` §5).
+
 ## 3. Trackable Pointers
 
 The compiler can track nullability only for pointers that:
