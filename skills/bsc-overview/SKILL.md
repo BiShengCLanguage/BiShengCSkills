@@ -25,18 +25,20 @@ BiSheng C (BSC) is a **superset of C** with Rust-inspired memory safety, traits,
 
 ## 2. Feature Overview
 
+**⚠️ Experimental features**: member functions, `_Trait`, operator overloading, `_Owned struct`, and stackless coroutines (`_Async`/`_Await`) are low-priority experimental features — under-tested, subject to breaking change, and **rejected by default**. Using any of them requires the `-fbsc-experimental` compile flag (error otherwise: `X is an experimental BSC feature; enable with -fbsc-experimental`). `_Owned`/`_Borrow` **pointers**, safe zones, generics, nullability, and constexpr are NOT gated. Note: libcbs containers (`Vec<T>`, `String`, …) are built on `_Owned struct` + member functions, so compiling code that includes them also needs the flag. See `bsc-compile`.
+
 | Feature | Keywords | Description |
 |---------|----------|-------------|
-| Member functions | `TypeName::method`, `this`, `This` | Attach methods to any type (struct, primitive, etc.) |
+| Member functions ⚠️ | `TypeName::method`, `this`, `This` | Attach methods to any type (struct, primitive, etc.) |
 | Generics | `<T>`, `<T, int N>` | Compile-time monomorphization, constant generics, type aliases |
-| Traits | `_Trait`, `_Impl`, `This*` | Interface abstraction with vtable dynamic dispatch |
-| Operator overloading | `__attribute__((operator OP))` | Overload operators for user-defined types |
-| Ownership | `_Owned`, `_ArrayElem`, `_Nullable`, `_Nonnull`, `_Public` | Move semantics, RAII destructors, compile-time memory safety |
+| Traits ⚠️ | `_Trait`, `_Impl`, `This*` | Interface abstraction with vtable dynamic dispatch |
+| Operator overloading ⚠️ | `__attribute__((operator OP))` | Overload operators for user-defined types |
+| Ownership | `_Owned`, `_ArrayElem`, `_Nullable`, `_Nonnull`, `_Public` | Move semantics, RAII destructors, compile-time memory safety (`_Owned struct` itself is ⚠️) |
 | Borrowing | `_Borrow`, `_ArrayElem`, `&_Const`, `&_Mut` | Non-owning references with lifetime enforcement |
 | Nullability | `_Nullable`, `_Nonnull`, `nullptr` | Compile-time null-safety checking |
 | Safe zones | `_Safe`, `_Unsafe` | Compiler-enforced memory safety regions |
 | Initialization analysis | `__attribute__((ensure_init))`, `__attribute__((ensure_init_if_ret))`, `__assume_initialized` | Field-level uninitialized variable detection |
-| Coroutines | `_Async`, `_Await`, `Future` | Stackless coroutines with poll-based execution |
+| Coroutines ⚠️ | `_Async`, `_Await`, `Future` | Stackless coroutines with poll-based execution |
 | Scheduler | `Scheduler::init/spawn/run/destroy` | Thread-pool concurrent task execution |
 | constexpr | `constexpr`, `_Static_assert`, `if constexpr` | Compile-time evaluation and type-specialized branches |
 | Type traits | `is_integral<T>()`, `is_pointer<T>()`, etc. | Compile-time type classification |

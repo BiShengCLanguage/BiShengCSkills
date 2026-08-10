@@ -58,6 +58,8 @@ If you want to keep access, pass a `_Borrow` instead (see `bsc-borrowing`).
 
 ## 5. `_Owned struct` — Structs That Own Resources
 
+> ⚠️ `_Owned struct` is an experimental BSC feature — compiling it requires `-fbsc-experimental` (plain `_Owned` pointers are not gated).
+
 Mark a struct `_Owned` when it holds heap pointers or needs cleanup:
 
 ```c

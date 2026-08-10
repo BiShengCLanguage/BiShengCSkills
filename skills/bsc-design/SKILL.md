@@ -9,6 +9,8 @@ BSC is not just "C with annotations" — the ownership system changes how APIs a
 This skill covers design decisions you face when **starting from a blank file**, not when
 porting existing C.
 
+> ⚠️ **Experimental-feature gate**: member functions, `_Trait`, operator overloading, `_Owned struct`, and coroutines require `-fbsc-experimental` (they are low-priority experimental features, subject to breaking change). libcbs containers (`Vec`, `String`, …) transitively require it too. `_Owned`/`_Borrow` pointers, safe zones, generics, and nullability are stable and not gated. When a design must build with default flags, prefer plain `struct` + `*_Owned` fields + free functions over `_Owned struct` + member functions.
+
 ## 1. Rules of Thumb (read this first)
 
 Eight rules to consult when designing any BSC API. If you only remember one thing,

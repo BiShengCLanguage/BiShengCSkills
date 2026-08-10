@@ -667,6 +667,8 @@ _Unsafe { allocated = __take_from_raw(strdup("hello")); }              // strdup
 
 #### Deciding `struct` vs `_Owned struct` when porting
 
+> ⚠️ `_Owned struct` (and member functions) are experimental BSC features — files using them must be compiled with `-fbsc-experimental`. Plain `struct` with `*_Owned` fields is not gated. Factor this into the choice: for a migration that must build with default flags, prefer `struct` + explicit release.
+
 C has only one kind of aggregate. BSC has two:
 
 - **`struct S`** — copy semantics (like a C struct). May still contain

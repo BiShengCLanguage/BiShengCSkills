@@ -119,6 +119,16 @@ _Safe void foo(void) {
 - `int *_Owned _Nullable p = nullptr;` allows null owned pointers
 - `__take_from_raw` and `__move_to_raw` preserve Nullability
 
+For an `_Owned _Nullable` pointer the binary owns/lost-ownership state is combined with the null-state the nullability analysis tracks (see `bsc-nullability`), giving three cases:
+
+- **Definitely null** — never owns. Every transfer operation (init/assign to another `_Owned _Nullable`, pass to an `_Owned _Nullable` param, `return`, `__move_to_raw`/`__move_array_to_raw`) is allowed as a no-op; borrows `&_Mut *p`/`&_Const *p` are allowed and yield null; dereference is an error; **scope exit reports no memory leak** (`int *_Owned _Nullable p = nullptr;` needs no free).
+- **Definitely non-null** — behaves like a `_Nonnull` `_Owned` pointer: transfer ops require and consume ownership, deref/borrow require ownership without consuming it, unfreed at scope exit is a leak error.
+- **Maybe null** — same as definitely non-null, except: **dereference is an error** (`error: nullable pointer cannot be dereferenced` — null-check first), and transfer targets must themselves be `_Nullable` (`int *_Owned q = p;` is `error: nonnull pointer cannot be assigned by nullable pointer`; use `int *_Owned _Nullable q = p;`). Unfreed at scope exit is still a leak error (`'p' is not freed or moved before it goes out of scope`) — `safe_free((void *_Owned _Nullable)p)` accepts maybe-null pointers directly, no null check needed.
+
+Assigning into an `_Owned _Nullable` that currently holds no ownership propagates the RHS state: null RHS → definitely null (RHS untouched); owning RHS → ownership and null-state move over, RHS loses ownership.
+
+Note: the deref and nullable→nonnull restrictions are enforced by the **nullability** analysis — with `-nullability-check` off (or outside its scope), only the ownership half applies.
+
 ### Logical and conditional operators
 - Logical operators (`!`, `&&`, `||`) work on `_Owned` pointers (null checks, no ownership consumed)
 - `_Owned` pointers can be conditions in `if`/`while`/`do-while`/`for`/ternary, but **NOT** `switch`
@@ -153,6 +163,8 @@ In generic functions, when `_Owned` modifies generic type parameter T (as `T _Ow
 - Functions without `_Safe` or `_Unsafe` are non-safe by default
 
 ## 7. Owned Structs (RAII)
+
+> ⚠️ **Experimental feature** — `_Owned struct` (unlike plain `_Owned` **pointers**, which are stable) is a low-priority BSC feature and requires `-fbsc-experimental` (otherwise `error: _Owned struct is an experimental BSC feature; enable with -fbsc-experimental`). libcbs containers (`Vec<T>`, `String`, …) are `_Owned struct`s internally, so including their headers forces the flag too. The example below also needs the flag for its member functions and destructor.
 
 ```c
 #include "bishengc_safety.hbs"

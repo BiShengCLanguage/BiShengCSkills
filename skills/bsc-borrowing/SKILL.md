@@ -51,7 +51,14 @@ From `_Owned` pointer: `&_Const *owned_ptr` or `&_Mut *owned_ptr`.
 `&_Mut *p` / `&_Const *p` **do not evaluate `*p`** — they just rebind to the
 object `p` points at. So `p` being null does **not** cause a dereference, and if
 `p` is an `_Owned` pointer its ownership is **not** moved. (`p` may be a raw,
-`_Owned`, or `_Borrow` pointer.)
+`_Owned`, or `_Borrow` pointer — but **not a function pointer**: `&_Mut *fp` is
+`error: '&_Mut' cannot be applied to a function pointer`.)
+
+The resulting borrow **inherits `p`'s nullability**: its `_Nullable`/`_Nonnull`
+attribute and its tracked null-state match `p`'s. Borrowing a maybe-null
+`_Owned _Nullable` yields a `_Nullable` borrow — assigning it to a
+`_Borrow _Nonnull` is `error: nonnull pointer cannot be assigned by nullable
+pointer`; store it in a `T *_Borrow _Nullable` instead.
 
 ## 3. Semantics
 

@@ -108,6 +108,8 @@ constexpr bool is_immut_borrow<T>();     // T is const _Borrow (immutable)
 constexpr bool is_mut_borrow<T>();       // T is non-const _Borrow (mutable)
 constexpr bool is_move_semantic<T>();    // _Owned pointer, _Owned struct, or struct with _Owned members
 constexpr bool is_trivial_data<T>();     // no raw pointers, _Owned pointers, _Borrow pointers, or _Owned structs
+constexpr bool is_nullable<T>();         // T is a pointer whose nullability is _Nullable (incl. by default)
+constexpr bool is_arrayelem<T>();        // T is an _Owned _ArrayElem or _Borrow _ArrayElem pointer
 constexpr size_t rank<T>();              // array dimension count
 constexpr size_t extent<T, size_t N>();  // size of Nth dimension
 ```
@@ -124,6 +126,20 @@ struct HasOwned { int *_Owned p; };          // is_trivial_data → false (_Owne
 1. `_Owned` pointer types
 2. `_Owned struct` types
 3. Struct types containing `_Owned` pointer members
+
+**`is_nullable<T>()`** — false for non-pointer types; for pointer types, true iff the effective nullability is `_Nullable` — **including the default**: raw pointers default to `_Nullable`, while `_Owned`/`_Borrow` pointers default to `_Nonnull`:
+
+```c
+is_nullable<int *>()                  // true  (raw ptr defaults _Nullable)
+is_nullable<int * _Nonnull>()         // false
+is_nullable<int * _Owned>()           // false (defaults _Nonnull)
+is_nullable<int * _Owned _Nullable>() // true
+is_nullable<int * _Borrow>()          // false (defaults _Nonnull)
+is_nullable<int * _Borrow _Nullable>()// true
+is_nullable<int>()                    // false (not a pointer)
+```
+
+**`is_arrayelem<T>()`** — true iff T is an `_Owned _ArrayElem` or `_Borrow _ArrayElem` pointer, regardless of nullability; false for everything else (raw pointers, plain `_Owned`/`_Borrow`, non-pointers).
 
 ### 4.3 Type Relationships
 

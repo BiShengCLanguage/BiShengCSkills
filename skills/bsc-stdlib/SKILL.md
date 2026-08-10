@@ -9,6 +9,8 @@ description: "BiSheng C standard library core types (libcbs). When you need to u
 
 libcbs provides safe container types with RAII semantics. All containers are `_Owned struct` types with automatic destructors. Include the appropriate `.hbs` header.
 
+> ⚠️ Because the containers are `_Owned struct`s with member functions — both experimental BSC features — **compiling any file that includes a container header (`vec.hbs`, `string.hbs`, `list.hbs`, `option.hbs`, `result.hbs`, …) requires `-fbsc-experimental`** (the error surfaces from inside the header, e.g. `raw_vec.hbs: error: _Owned struct is an experimental BSC feature`). `bishengc_safety.hbs` alone (`safe_malloc`/`safe_free`/`safe_swap`/`forget`) does NOT need the flag.
+
 **Key rule**: Generic containers can only be instantiated with `_Owned struct` or copyable types. If `T` has move semantics but is not an `_Owned struct`, wrap it in one.
 
 ## 2. Safety Utilities — `bishengc_safety.hbs`

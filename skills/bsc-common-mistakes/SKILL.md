@@ -619,7 +619,19 @@ on a callee reading through a borrow of an in-scope `_Owned` local**, including:
 - The `_Owned` local has been moved out before the return (then the destructor
   is skipped by `b_is_moved=1`, and there's no freed-memory read)
 
-## 9. Quick Reference
+## 9. Experimental-Feature Gate Errors
+
+```
+error: member function is an experimental BSC feature; enable with -fbsc-experimental
+error: _Trait is an experimental BSC feature; enable with -fbsc-experimental
+error: operator overloading is an experimental BSC feature; enable with -fbsc-experimental
+error: _Owned struct is an experimental BSC feature; enable with -fbsc-experimental
+error: coroutine is an experimental BSC feature; enable with -fbsc-experimental
+```
+
+These five features are gated behind `-fbsc-experimental`; add the flag to the compile command. The error often points **inside a library header** rather than your code — e.g. including `vec.hbs` fails in `raw_vec.hbs` (`_Owned struct RawVec`), and including `future.hbs` fails on its member functions. That is not a library bug: any file that includes libcbs container headers or `future.hbs` must be compiled with `-fbsc-experimental`.
+
+## 10. Quick Reference
 
 | Mistake | Fix |
 |---------|-----|
@@ -645,6 +657,7 @@ on a callee reading through a borrow of an in-scope `_Owned` local**, including:
 | Array init by element | Use init list `{1,2,3}` or `__assume_initialized` |
 | Uninitialized local | Initialize before use; field-level tracking applies |
 | Wrong return value from borrow of owned local | Stash into a local first; see §8.7 |
+| `X is an experimental BSC feature` | Add `-fbsc-experimental` (member fn / `_Trait` / operator / `_Owned struct` / coroutine) |
 
 > For detailed error codes, see `bsc-errors` Skill
 > For safe zone rules, see `bsc-safe-zone` Skill

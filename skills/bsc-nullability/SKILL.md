@@ -166,6 +166,10 @@ _Safe int *_Borrow return_nonnull(int *_Borrow p) {
 }
 ```
 
+For `_Owned _Nullable` pointers these rules combine with ownership tracking: a maybe-null `_Owned _Nullable` can only be moved into `_Nullable` receivers, a definitely-null one may be "moved" freely as a no-op and needs no free at scope exit. See `bsc-ownership` §5 for the full three-state rules.
+
+Borrows created via `&_Mut *p` / `&_Const *p` **inherit `p`'s nullability** (attribute and tracked state) — borrowing a nullable pointer yields a `_Nullable` borrow. The trait `is_nullable<T>()` (see `bsc-constexpr`) tests effective nullability at compile time, counting defaults: raw pointers default `_Nullable`, `_Owned`/`_Borrow` default `_Nonnull`.
+
 ## 7. Type Casting
 
 With `-nullability-check=all`, casting Nullable to Nonnull in non-safe zones is also checked:

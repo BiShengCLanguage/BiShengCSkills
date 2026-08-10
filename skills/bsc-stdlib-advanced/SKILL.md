@@ -9,6 +9,8 @@ description: "BiSheng C advanced standard library types (libcbs). When you need 
 
 These types build on the core libcbs containers. All are `_Owned struct` types with automatic destructors. For core types (`Vec`, `String`, `Option`, `Result`, etc.), see `bsc-stdlib` Skill.
 
+> ⚠️ `_Owned struct` and member functions are experimental BSC features — compiling any file that includes these headers requires `-fbsc-experimental`. See `bsc-stdlib` / `bsc-compile`.
+
 ## 2. Rc\<T\> and Weak\<T\> — Reference Counting
 
 ```c

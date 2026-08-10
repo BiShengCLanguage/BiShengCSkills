@@ -5,6 +5,8 @@ description: "BiSheng C member functions. When you need to understand how to att
 
 # BiSheng C Member Functions Skill
 
+> ⚠️ **Experimental feature** — member functions are a low-priority BSC feature: under-tested and subject to breaking change. Compiling any member-function declaration requires `-fbsc-experimental` (otherwise `error: member function is an experimental BSC feature; enable with -fbsc-experimental`). This also applies transitively: headers that declare member functions (all libcbs containers, `future.hbs`) force the flag onto every file that includes them.
+
 ## 1. Overview
 
 Attach methods to any type (struct, union, enum, int, float, etc.) without changing its memory layout (size and alignment are unaffected). Three forms: instance methods, value receivers, and static methods. This enables non-intrusive extension — add methods to existing types without modifying their source.

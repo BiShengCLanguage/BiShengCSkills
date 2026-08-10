@@ -51,7 +51,13 @@ If no path is configured, ask the user. Then use the full path in all compile co
 # Compile .c / .h files AS BSC (overrides extension-based detection)
 /path/to/bsc/bin/clang -x bsc file.c -o output       # driver form, space-separated
 /path/to/bsc/bin/clang -cc1 -xbsc file.c             # cc1 form, no space
+
+# Enable experimental features (member functions, _Trait, operator
+# overloading, _Owned struct, coroutines) — required or they are errors
+/path/to/bsc/bin/clang -fbsc-experimental file.cbs -o output
 ```
+
+**`-fbsc-experimental`**: member functions, `_Trait`, operator overloading, `_Owned struct`, and coroutines (`_Async`/`_Await`) are low-priority experimental features, rejected by default with `error: X is an experimental BSC feature; enable with -fbsc-experimental`. In practice the flag is needed for any code that includes libcbs container headers (`vec.hbs`, `string.hbs`, …, which use `_Owned struct` and member functions internally) or `future.hbs`. Plain `_Owned`/`_Borrow` pointers, `bishengc_safety.hbs` (`safe_malloc`/`safe_free`), `bsc_type_traits.hbs`, generics, and safe zones need no flag. The negative form `-fno-bsc-experimental` exists.
 
 **`-x bsc` use cases**: incremental C→BSC migration without renaming every file; keeping the original `.c`/`.h` extensions for compatibility with external tooling. Only `.cbs`/`.hbs` are auto-detected as BSC — everything else needs the flag. Most editor/LSP tooling keys off `.cbs`/`.hbs`, so keeping `.c`/`.h` means you lose BSC-aware editor features.
 

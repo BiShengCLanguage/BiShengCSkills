@@ -5,6 +5,8 @@ description: "BiSheng C operator overloading. When you need to understand how to
 
 # BiSheng C Operator Overloading Skill
 
+> ⚠️ **Experimental feature** — operator overloading is a low-priority BSC feature: under-tested and subject to breaking change. `__attribute__((operator OP))` requires `-fbsc-experimental` (otherwise `error: operator overloading is an experimental BSC feature; enable with -fbsc-experimental`).
+
 ## 1. Overview
 
 Define operator behavior for user-defined types by marking a global function with `__attribute__((operator OP))`. The compiler redirects matching operator expressions to the overload function.

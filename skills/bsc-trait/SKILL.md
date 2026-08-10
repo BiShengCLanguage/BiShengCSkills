@@ -5,6 +5,8 @@ description: "BiSheng C traits. When you need to understand _Trait definition, _
 
 # BiSheng C Traits Skill
 
+> ⚠️ **Experimental feature** — `_Trait` is a low-priority BSC feature: under-tested and subject to breaking change. `_Trait` definitions and `_Impl` declarations require `-fbsc-experimental` (otherwise `error: _Trait is an experimental BSC feature; enable with -fbsc-experimental`).
+
 ## 1. Overview
 
 Interface abstraction with vtable-based dynamic dispatch. Define a set of methods, implement them for concrete types, and call through trait pointers for polymorphism.

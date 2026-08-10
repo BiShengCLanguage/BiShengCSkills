@@ -5,6 +5,8 @@ description: "BiSheng C coroutines. When you need to understand _Async functions
 
 # BiSheng C Coroutines Skill
 
+> ⚠️ **Experimental feature** — stackless coroutines are a low-priority BSC feature: under-tested and subject to breaking change. `_Async` functions and `_Await` expressions require `-fbsc-experimental` (otherwise `error: coroutine is an experimental BSC feature; enable with -fbsc-experimental`). Merely including `future.hbs` already needs the flag — it declares member functions, which are gated too.
+
 ## 1. Overview
 
 Stackless coroutines. Requires `#include "future.hbs"`.
