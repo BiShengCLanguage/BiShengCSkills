@@ -2,11 +2,11 @@
 # install.sh — Install BiSheng C Skills for AI coding tools
 #
 # One-liner install (no manual clone needed):
-#   curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash
-#   curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a claude
+#   curl -fsSL https://gitcode.com/api/v5/repos/bisheng_c_language_dep/BiShengCSkills/raw/install.sh | bash
+#   curl -fsSL https://gitcode.com/api/v5/repos/bisheng_c_language_dep/BiShengCSkills/raw/install.sh | bash -s -- -a claude
 #
 # Or with git:
-#   bash <(curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh)
+#   bash <(curl -fsSL https://gitcode.com/api/v5/repos/bisheng_c_language_dep/BiShengCSkills/raw/install.sh)
 #
 # Usage (if already cloned):
 #   bash install.sh                          # install for all detected tools in current project
@@ -32,8 +32,8 @@
 
 set -euo pipefail
 
-REPO_URL="https://gitee.com/bisheng_c_language_dep/BiShengCSkills.git"
-REPO_SSH="git@gitee.com:bisheng_c_language_dep/BiShengCSkills.git"
+REPO_URL="https://gitcode.com/bisheng_c_language_dep/BiShengCSkills.git"
+REPO_SSH="git@gitcode.com:bisheng_c_language_dep/BiShengCSkills.git"
 CACHE_DIR="${BSC_SKILLS_DIR:-/tmp/BiShengCSkills}"
 
 # --- Bootstrap: if run via curl|bash, clone the repo first ---

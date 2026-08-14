@@ -38,7 +38,7 @@ that mainstream training data doesn't cover (`_Owned T*` is wrong, `T *_Owned` i
 
 ```bash
 # From your project root
-curl -fsSL https://gitee.com/bisheng_c_language_dep/BiShengCSkills/raw/master/install.sh | bash -s -- -a claude
+curl -fsSL https://gitcode.com/api/v5/repos/bisheng_c_language_dep/BiShengCSkills/raw/install.sh | bash -s -- -a claude
 ```
 
 What this does:
