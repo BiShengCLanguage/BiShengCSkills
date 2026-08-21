@@ -60,7 +60,7 @@ _Safe {
 ```
 
 ### 1.6 Forbidden casts in safe zone
-No cross-category pointer casts (`_Owned`/`_Borrow`/raw), no pointer-integer casts, no float-to-integer casts. Exception: `T *_Owned` to `void *_Owned` is allowed.
+No cross-category pointer casts (`_Owned`/`_Borrow`/raw), no pointer-integer casts, no float-to-integer casts. Exceptions: `T *_Owned` to `void *_Owned`; borrows to `void`-pointee borrows (trivial `T`); and raw `T *` to `void *`/`const T *`/`const void *` (since 2026-08; `void` targets need trivial `T`, reverse directions still forbidden). See `bsc-safe-zone` §3 for the full matrix.
 
 ### 1.7 Mutable borrow of global in safe zone
 Only `&_Const` of globals allowed; `&_Mut` of globals is forbidden.
@@ -116,6 +116,29 @@ arr[3] = 3;                            // ok: _ArrayElem allows subscript
 // arr += 1;                           // error: still no arithmetic
 safe_free_array((void *_Owned _ArrayElem)arr);
 ```
+
+### 2.5 Transferring array-element ownership outside a qualified for-loop
+
+Arrays of `_Owned` elements are allowed (since 2026-08), but the whole array
+shares one ownership state — freeing or assigning a single element outside a
+full-range `for` loop is rejected:
+
+```c
+#include "bishengc_safety.hbs"
+_Safe void f(void) {
+    int *_Owned a[2] = {safe_malloc(1), safe_malloc(2)};
+    // safe_free((void *_Owned)a[0]);  // error: cannot transfer ownership of
+                                       //   array element `a` outside a
+                                       //   qualifying for-loop
+    for (int i = 0; i < 2; i++) {      // FIX: full-range loop, step +1,
+        safe_free((void *_Owned)a[i]); //   no break/return, only a[i] accesses
+    }
+}
+```
+
+For one element, swap it out instead: `safe_swap(&_Mut a[0], &_Mut tmp);`.
+Every path through the loop body must leave `a[i]` in the same ownership state
+(null-check skips are fine — null counts as not owning). See `bsc-ownership` §9.
 
 ## 3. Borrowing Mistakes
 

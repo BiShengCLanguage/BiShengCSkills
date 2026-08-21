@@ -108,12 +108,20 @@ _Safe void foo(void) {
 - Exception: `T *_Owned` -> `void *_Owned` is allowed in safe context
 
 ### Prohibited uses of `_Owned`
-- **Global variables** (including function-local `static`)
+- **Global and static variables**: a global or function-local `static` cannot be `_Owned`-qualified, a struct containing `_Owned` members, or an array of either
+  ```c
+  struct A { int *_Owned p; };
+  int *_Owned g_p;        // ERROR
+  struct A g_a;           // ERROR
+  int *_Owned g_arr[2];   // ERROR (array of _Owned)
+  struct A g_arr2[2];     // ERROR
+  ```
 - **Union members**: `_Owned` cannot modify union type members
   ```c
   union U { int *_Owned p; };  // ERROR
   ```
-- **Array elements**: cannot store `_Owned` pointers in arrays, including structs with `_Owned` members as array elements. The same restriction applies to the pointee type of `T *_Owned _ArrayElem` (the inner element type cannot have `_Owned` members)
+
+**Local** arrays and struct-member arrays of `_Owned` types **are allowed** (this was forbidden before 2026-08) — with special whole-array ownership rules, see §9.
 
 ### Nullable `_Owned` pointers
 - `int *_Owned _Nullable p = nullptr;` allows null owned pointers
@@ -123,7 +131,7 @@ For an `_Owned _Nullable` pointer the binary owns/lost-ownership state is combin
 
 - **Definitely null** — never owns. Every transfer operation (init/assign to another `_Owned _Nullable`, pass to an `_Owned _Nullable` param, `return`, `__move_to_raw`/`__move_array_to_raw`) is allowed as a no-op; borrows `&_Mut *p`/`&_Const *p` are allowed and yield null; dereference is an error; **scope exit reports no memory leak** (`int *_Owned _Nullable p = nullptr;` needs no free).
 - **Definitely non-null** — behaves like a `_Nonnull` `_Owned` pointer: transfer ops require and consume ownership, deref/borrow require ownership without consuming it, unfreed at scope exit is a leak error.
-- **Maybe null** — same as definitely non-null, except: **dereference is an error** (`error: nullable pointer cannot be dereferenced` — null-check first), and transfer targets must themselves be `_Nullable` (`int *_Owned q = p;` is `error: nonnull pointer cannot be assigned by nullable pointer`; use `int *_Owned _Nullable q = p;`). Unfreed at scope exit is still a leak error (`'p' is not freed or moved before it goes out of scope`) — `safe_free((void *_Owned _Nullable)p)` accepts maybe-null pointers directly, no null check needed.
+- **Maybe null** — same as definitely non-null, except: **dereference is an error** (`error: cannot dereference possibly-null status pointer 'p'` — null-check first), and transfer targets must themselves be `_Nullable` (`int *_Owned q = p;` is `error: cannot assign possibly-null status pointer 'p' to a '_Nonnull' pointer`; use `int *_Owned _Nullable q = p;`). Unfreed at scope exit is still a leak error (`memory leak because 'p' is not freed or moved before it goes out of scope`) — `safe_free((void *_Owned _Nullable)p)` accepts maybe-null pointers directly, no null check needed.
 
 Assigning into an `_Owned _Nullable` that currently holds no ownership propagates the RHS state: null RHS → definitely null (RHS untouched); owning RHS → ownership and null-state move over, RHS loses ownership.
 
@@ -353,8 +361,14 @@ must be released, no implicit cast to/from raw, etc.) with these differences:
   - `__take_array_from_raw(p)` — takes a raw pointer as `_Owned _ArrayElem`
 - **C-style casts between `T *`, `T *_Owned`, and `T *_Owned _ArrayElem` are
   forbidden** — these three are distinct categories. Use the array builtins.
-- The **pointee type cannot contain `_Owned` members** (same restriction that
-  applies to ordinary arrays of `_Owned`).
+- The pointee type `T` (and, recursively, its members) **cannot be or contain
+  `_Borrow` pointers** (`pointee type of '...' cannot be _Borrow pointers or
+  contain _Borrow qualified fields`). Pointees that are `_Owned` pointers or
+  structs **containing `_Owned` members are allowed** (relaxed 2026-08; used to
+  be forbidden) — such heap arrays follow the whole-array ownership rules of §9,
+  and `safe_malloc_array` cannot allocate them (its per-element copy of the
+  initializer would move it repeatedly); use `safe_calloc_array<T>` or
+  `__take_array_from_raw` instead.
 - `_ArrayElem` cannot modify a **raw** pointer; it only attaches to `_Owned` or
   `_Borrow`.
 
@@ -385,5 +399,115 @@ add `_Owned _ArrayElem` to an unannotated `_Unsafe` parameter, but you cannot
   → `_Owned _ArrayElem`.
 - Buffer is treated as raw bytes, reinterpreted, or comes from a non-BSC
   allocator → keep raw `T *` field + `_Unsafe` (RawVec).
+
+## 9. Arrays of `_Owned` Elements (qualified for-loops)
+
+Since 2026-08, **local arrays and struct-member arrays may hold `_Owned` types
+or structs containing `_Owned` members** (globals/statics still cannot — §5).
+The compiler cannot track per-index ownership, so it treats the whole array as
+one unit: all indices of the same `_Owned` member share **one ownership state**.
+Ownership may therefore only change in ways that provably affect every element
+the same way:
+
+1. Inside a **qualified for-loop** (below), elements follow the normal
+   single-variable `_Owned` rules; the state of `a[i]` at loop end becomes the
+   state of the whole array.
+2. Outside a qualified loop, `safe_swap(&_Mut a[0], &_Mut tmp)` reads/writes an
+   element **without** an ownership transfer.
+3. Any other ownership transfer of an element (assign, init, pass, return) is
+   an error: ``cannot transfer ownership of array element `a` outside a
+   qualifying for-loop; use a full-range for-loop or safe_swap``
+   (`err_ownership_array_elem_transfer_forbidden`; a note explains which loop
+   condition failed, e.g. "loop bound must equal the array length", "loop body
+   must not return or goto early"). Non-transferring uses (dereference,
+   comparison, borrowing) stay legal anywhere.
+
+If elements still own memory when the array leaves scope, that's the usual
+memory-leak error.
+
+```c
+#include "bishengc_safety.hbs"
+
+_Safe void test(void) {
+    int *_Owned a[3] = {safe_malloc(1), safe_malloc(2), safe_malloc(3)};
+    for (int i = 0; i < 3; i++) {
+        safe_free((void *_Owned)a[i]);   // ok: qualified for-loop
+    }
+}
+```
+
+### 9.1 What makes a for-loop "qualified"
+
+For an array `a` of length `N`, all of the following:
+
+1. Init: `for (T i = 0; ...)` — `T` an integer type, start at 0, step exactly
+   +1 (`i++`, `++i`, `i += 1`).
+2. Condition: `i < N` where `N` is the array length (for a variable bound, `N`
+   must not be modified, address-taken, or borrowed in the function), and `T`'s
+   range must cover `N`.
+3. Body doesn't modify `i`, take its address, or mutably borrow it.
+4. No early exit from the loop: no `break`, `return`, or `goto` out of it
+   (`continue` and inner-loop `break`/local `goto` are fine).
+5. The array is only accessed as `a[i]` (1-D), `a[i][j]` (multi-D — outer loop
+   = first dimension, dimension order must match the declaration), or
+   `a[i].field`.
+
+Loop-end ownership must be **consistent across paths** — freeing only some
+indices (`if (i != 1) safe_free(...)`) is an error
+(``ownership state of array element `a` is inconsistent across paths in
+for-loop body``). A null-check skip is fine: null elements count as not owning,
+so `if (a[i] != nullptr) safe_free(...)` passes.
+
+### 9.2 Assigning into elements
+
+An element that still owns memory cannot be assigned over — not even with
+`nullptr` (`cannot assign to 'a[]' because it still holds an _Owned value;
+move or free it first`, `err_ownership_array_elem_assign_owned`). Only null /
+moved / uninitialized elements may be (re)assigned, and assignment is itself a
+transfer, so it must happen in a qualified loop (or via `safe_swap`).
+
+### 9.3 Struct arrays: per-field tracking
+
+For arrays of structs with several `_Owned` fields, each field has its own
+whole-array state — a qualified loop may move `s[i].a` while `s[i].b` stays
+owned, and scope exit reports leaks per field:
+
+```c
+struct S { int *_Owned a; int *_Owned b; };
+_Safe void fields(void) {
+    struct S s[2] = {{safe_malloc(1), safe_malloc(2)},
+                     {safe_malloc(3), safe_malloc(4)}};
+    for (int i = 0; i < 2; i++) {
+        safe_free((void *_Owned)s[i].a);
+        s[i].a = s[i].b;                 // b moves out, a moves in
+    }
+    for (int i = 0; i < 2; i++) {
+        safe_free((void *_Owned)s[i].a);
+    }
+}   // ok: neither field owns anything here
+```
+
+### 9.4 Heap arrays (`_Owned _ArrayElem`) with `_Owned` elements
+
+`T *_Owned _ArrayElem` pointers whose `T` contains `_Owned` members (§8) are
+**stricter than true arrays**: the qualified-for-loop exemption does *not*
+apply to them — `p[i].field = ...` / `safe_free(... p[i].field)` are rejected
+with the same ``cannot transfer ownership of array element `p` outside a
+qualifying for-loop`` error **even inside a full-range constant-bound loop**
+(verified; the compiler has no length to check a heap loop against). What
+works:
+
+- **reads** (`*p[0].f` after a null check via a trackable temp), comparisons,
+  borrows;
+- **`safe_swap(&_Mut p[i].field, &_Mut tmp)`** to move values in or out;
+- **`__move_array_to_raw(p)`** to move the whole array to a raw pointer and
+  continue in `_Unsafe` (this is also the only way to free such an array —
+  `safe_free_array((void *_Owned _ArrayElem)p)` is rejected with
+  `cannot cast 'p' to 'void * _Owned': p.f is still _Owned` because the
+  analysis conservatively treats the elements' fields as owning, null-filled
+  or not).
+
+Allocate with `safe_calloc_array<T>` (zero-init ⇒ null `_Nullable` fields) or
+`__take_array_from_raw` — **not** `safe_malloc_array` (see `bsc-stdlib`).
 
 > See also: `bsc-borrowing`, `bsc-safe-zone`, `bsc-nullability`, `bsc-design`, `bsc-errors` Skills

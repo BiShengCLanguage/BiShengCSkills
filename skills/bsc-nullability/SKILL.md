@@ -7,7 +7,7 @@ description: "BiSheng C non-null pointers and nullability. When you need to unde
 
 ## 1. Overview
 
-BSC tracks pointer nullability at compile time. The compiler prevents dereferencing or accessing members through pointers that may be null.
+BSC tracks pointer nullability at compile time. The compiler prevents dereferencing or accessing members through pointers that may be null. (Since 2026-08 these diagnostics call the tracked state "possibly-null status" and name the pointer, e.g. `cannot dereference possibly-null status pointer 'p'`, `cannot assign possibly-null status pointer 'p' to a '_Nonnull' pointer`.)
 
 - `_Nonnull` — pointer guaranteed non-null (default for `_Owned` and `_Borrow`)
 - `_Nullable` — pointer may be null (default for raw pointers)

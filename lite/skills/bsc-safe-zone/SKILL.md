@@ -100,9 +100,10 @@ Once a function is `_Unsafe`, every caller must also be `_Unsafe` or wrap the ca
 
 | Conversion | In `_Safe` |
 |---|---|
-| `T *_Borrow` → `void *_Borrow` | OK (implicit) |
+| `T *_Borrow` → `void *_Borrow` | OK (implicit or explicit; T must be trivial data) |
 | `void *_Borrow` → `T *_Borrow` | Requires `_Unsafe(expr)` cast |
 | `T *_Owned` → `void *_Owned` | OK (explicit cast) |
+| raw `T *` → `void *` / `const T *` / `const void *` | OK (`void` targets need trivial T); reverse forbidden |
 | `T *_Owned` → raw `T *` | Forbidden (use `__move_to_raw` via `_Unsafe`) |
 | `T *_Borrow` → raw `T *` | Forbidden |
 | Cast between two different `T *_Borrow` types | Forbidden |

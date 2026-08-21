@@ -13,6 +13,11 @@ BiSheng C (BSC) is a **superset of C** with Rust-inspired memory safety, traits,
 - Header files: `.hbs` (or `.h` compiled with `-x bsc`)
 - Compiler: clang fork — `clang file.cbs -o output`, or `clang -x bsc file.c -o output` to treat a `.c` file as BSC
 
+**Supported GNU C extensions** (manual Appendix C): `typeof`, conditionals
+with omitted operands (`a ?: b`), and statement expressions (`({ ...; v })`).
+These work inside `_Safe` code and are covered by the initialization analysis
+(see `bsc-initialization`).
+
 ## CRITICAL Syntax Rule
 
 `_Owned` and `_Borrow` are **pointer qualifiers** — they go **after the `*`**, never before the type:

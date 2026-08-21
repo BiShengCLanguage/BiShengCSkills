@@ -99,11 +99,19 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 
 | Code | Message | Fix |
 |------|---------|-----|
-| E0401 | Nullable pointer cannot be dereferenced | Add null check before dereference |
-| E0402 | Cannot pass nullable pointer argument | Guard with null check before call |
-| E0403 | Cannot return nullable pointer type | Add null check or change return type to `_Nullable` |
-| E0406 | Nonnull assigned by nullable | Guard with null check before assignment |
+| E0401 | Cannot dereference possibly-null status pointer 'p' | Add null check before dereference |
+| E0402 | Cannot pass possibly-null status pointer 'p' to a '_Nonnull' parameter | Guard with null check before call |
+| E0403 | Cannot return possibly-null status pointer 'p' as a '_Nonnull' pointer | Add null check or change return type to `_Nullable` |
+| E0406 | Cannot assign possibly-null status pointer 'p' to a '_Nonnull' pointer | Guard with null check before assignment |
 | E0407 | _Nonnull pointer must be initialized | Initialize at declaration |
+
+> **2026-08 diagnostic rework**: BSC error messages were reworded to state the
+> violated rule and name the operands, quoting names LLVM-style (`'x'`, not
+> `` `x` ``). Older docs (and the `errors/` catalog) may still show the previous
+> phrasings; the diagnostic *identifiers* (e.g. `err_nullable_pointer_dereference`)
+> are unchanged. New in 2026-08: array-element ownership errors
+> (`err_ownership_array_elem_transfer_forbidden`, `..._path_inconsistent`,
+> `..._assign_owned`) — see `bsc-ownership` §9.
 
 > For detailed per-category documentation, see the `errors/` directory.
 > For common fixes, see `bsc-common-mistakes` Skill.

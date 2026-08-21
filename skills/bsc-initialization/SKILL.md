@@ -16,7 +16,7 @@ BSC performs compile-time data-flow analysis to ensure variables are initialized
 ```c
 _Safe void example(void) {
     int x;
-    int y = x;  // error: use of uninitialized value: `x`
+    int y = x;  // error: use of uninitialized value: 'x'
 }
 ```
 
@@ -63,7 +63,7 @@ _Safe void empty_ok(void) {
 struct Bits { unsigned : 3; };
 _Safe void bits_err(void) {
     struct Bits b;
-    struct Bits c = b;      // error: use of uninitialized value: `b`
+    struct Bits c = b;      // error: use of uninitialized value: 'b'
 }
 ```
 
@@ -74,7 +74,7 @@ _Safe void example(int cond) {
     int x;
     if (cond) { x = 1; }
     // else path: x uninitialized
-    int y = x;  // error: use of possibly uninitialized value: `x`
+    int y = x;  // error: use of possibly uninitialized value: 'x'
 }
 ```
 
@@ -85,7 +85,7 @@ Taking `&`, `&_Mut`, or `&_Const` of an uninitialized variable is an error. Exce
 ```c
 _Safe void example(void) {
     int x;
-    int *_Borrow p = &_Mut x;  // error: use of uninitialized value: `x`
+    int *_Borrow p = &_Mut x;  // error: use of uninitialized value: 'x'
 }
 ```
 
@@ -94,8 +94,11 @@ _Safe void example(void) {
 ```c
 _Safe int example(int cond) {
     if (cond) { return 1; }
-}  // error: return value may not be initialized on all paths
+}  // error: non-void function 'example' does not return a value in all control paths
 ```
+
+(The error is anchored at the function's closing brace; a function that never
+returns a value gets the same message without the "in all control paths" tail.)
 
 ### Rule 6: Array element assignment does NOT initialize
 
@@ -138,20 +141,51 @@ _Safe void good(void) {
 }
 ```
 
-### Rule 7: Union — writing any member initializes the whole union
+### Rule 7: Union — only whole-variant initialization covers a union
+
+(Reworked 2026-08; previously *any* member write covered the union.) A union
+counts as initialized in exactly **two** ways:
+
+- a **declaration initializer**, any form (`= { .a = 42 }`, `= {0}`, `= {}`);
+- a **single assignment that wholly initializes one variant or the whole
+  union**: a scalar variant (`u.f = 3.14f;`), an entire struct variant
+  (`u.s = (struct Inner){1, 2};`), or the union itself (`u = other;`).
+
+Once covered, reads through **any** variant at any depth are ok (C semantics:
+writing one variant covers all bytes), and later partial writes don't revoke
+coverage. But **writing a single field of a struct variant covers nothing —
+not even that field** (`u.s.x = 1; int v = u.s.x;` is an error), and writing
+every field one by one **never accumulates** into coverage. Only the outermost
+union on a path can be covered; diagnostics for an uncovered union name the
+union, not the leaf field. `__assume_initialized` and `ensure_init` delegation
+follow the same rule: asserting/delegating one field of a variant does not
+cover the union — target the whole variant or union.
 
 ```c
 // Compile with -uninit-check=all (union access forbidden in safe zones)
-union U { int a; float f; };
+struct Inner { int x; int y; };
+union U { struct Inner s; float f; int a; };
 
-void example(void) {
+void whole_variant(void) {
     union U u;
-    u.a = 42;
-    float f = u.f;  // ok: entire union initialized via u.a
+    u.f = 3.14f;        // whole scalar variant → union covered
+    int v = u.s.x;      // ok: cross-variant read after coverage
+}
+
+void partial(void) {
+    union U u;
+    u.s.x = 1;          // one field of a variant → covers nothing
+    int v = u.s.x;      // error: use of uninitialized value: 'u'
+    u.s.y = 2;          // field-by-field never accumulates either
 }
 ```
 
-Writing a struct member within a union variant also initializes the whole union. Known limitation: cross-variant reads of unwritten bytes pass without error.
+A union member inside a struct participates in the struct's auto-promotion
+once covered (`w.uw.f = 3.14f; w.v = 1;` → `w` fully initialized).
+
+Known limitation: coverage is per-variant with **no size check** — after
+`u.c = 1;` (a `char` variant), reading a `long` variant compiles even though
+its upper bytes were never written.
 
 ### Rule 8: Nested structs — arbitrary depth tracking
 
@@ -177,6 +211,22 @@ _Safe void example(void) {
     int x = global_count;  // ok: guaranteed zero-initialized by C spec
 }
 ```
+
+### Expression coverage (GNU extensions, `sizeof`)
+
+Since 2026-08 the analysis descends into constructs it previously skipped —
+reads of uninitialized variables there are now caught:
+
+- **Statement expressions** `({ ...; v })` — the statements are analyzed in
+  place (`int y = ({ int t = x; t; });` errors when `x` is uninitialized).
+- **GNU binary conditional** `a ?: b` — analyzed like the full ternary; the
+  common operand is evaluated once.
+- **`sizeof` of a VLA type** — `sizeof(int[n])` evaluates `n` (C11 6.5.3.4p2),
+  so an uninitialized `n` errors. Only the *type* form: `sizeof(expr)` reads
+  the stored size without re-evaluating, and `_Alignof` never evaluates.
+
+`_Generic` and `__builtin_choose_expr` operands are still **not** descended
+into.
 
 ## 3. `__attribute__((ensure_init))`
 
@@ -232,7 +282,10 @@ _Safe void caller(void) {
 
 ### Restrictions before `*param` is initialized
 
-Cannot reassign or alias the `ensure_init` pointer before fulfilling the contract:
+Cannot reassign or alias the `ensure_init` pointer before fulfilling the
+contract. Aliasing covers any copy of the pointer value — a named local
+(`int *p = out;`), the `&*out` spelling (which is `out` itself), and (since
+2026-08) storing it into a **struct field or array element**:
 
 ```c
 void bad(int *__attribute__((ensure_init)) out) {
@@ -243,7 +296,25 @@ void bad(int *__attribute__((ensure_init)) out) {
 void bad2(int *__attribute__((ensure_init)) out) {
     int *p = out;   // error: cannot alias before *out initialized
 }
+
+struct Holder { int *p; };
+void bad3(int *__attribute__((ensure_init)) out) {
+    struct Holder h;
+    h.p = out;      // error: field store counts as aliasing too
+    *out = 42;
+}
 ```
+
+Passing the pointer **by value to a function without the contract** is *not*
+aliasing — it's allowed — but the compiler doesn't track writes the callee
+makes through it, so the contract must still be fulfilled locally (or by
+delegating to a contract-carrying callee). No warning fires on the call itself;
+if the contract ends up unfulfilled, the error appears at return.
+
+**Reading** through the pointer before `*param` is initialized is an error in
+every zone, in every form that loads the pointee: `*out`, `out[0]`, passing
+`*out` as a call argument, or reading through a temp alias. Taking an address
+(`&out->f`) is not a load and is fine.
 
 After initialization, free use is allowed:
 
@@ -257,13 +328,30 @@ void ok(int *__attribute__((ensure_init)) out) {
 
 ### Delegation
 
-`ensure_init` can delegate to another `ensure_init` function:
+`ensure_init` can delegate to another `ensure_init` function — passing the
+pointer to a contract-carrying callee is the contract being handed on, not a
+read or an alias:
 
 ```c
 void init_val(int *__attribute__((ensure_init)) out);
 
 void init_delegated(int *__attribute__((ensure_init)) out) {
     init_val(out);  // ok: delegates to another ensure_init
+}
+```
+
+Delegation credit is **field-precise**: handing `&out->a` to a contract callee
+covers only that field, and reads of other fields still error until they're
+initialized too:
+
+```c
+struct Pair { int a; int b; };
+void init_int(int *__attribute__((ensure_init)) p);
+
+void field_precise(struct Pair *__attribute__((ensure_init)) out) {
+    init_int(&out->a);   // credits out->a only
+    int x = out->b;      // error: out->b still uninitialized
+    out->b = 2;          // now the whole *out is covered
 }
 ```
 

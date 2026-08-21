@@ -57,8 +57,8 @@ object `p` points at. So `p` being null does **not** cause a dereference, and if
 The resulting borrow **inherits `p`'s nullability**: its `_Nullable`/`_Nonnull`
 attribute and its tracked null-state match `p`'s. Borrowing a maybe-null
 `_Owned _Nullable` yields a `_Nullable` borrow — assigning it to a
-`_Borrow _Nonnull` is `error: nonnull pointer cannot be assigned by nullable
-pointer`; store it in a `T *_Borrow _Nullable` instead.
+`_Borrow _Nonnull` is `error: cannot assign possibly-null status pointer 'p'
+to a '_Nonnull' pointer`; store it in a `T *_Borrow _Nullable` instead.
 
 ## 3. Semantics
 
@@ -125,13 +125,14 @@ Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, mem
 ## 7. Type Conversions
 
 - **Trait upcasting**: explicit cast required; no implicit downcasting from trait to concrete
-- **`T *_Borrow` → `void *_Borrow`**: **implicit** when `T` is a trivial data type (no pointer fields, not an `_Owned struct`); otherwise the conversion is **forbidden**, even with an explicit cast
+- **`T *_Borrow` → `void *_Borrow`**: **implicit or explicit** (explicit allowed since 2026-08) when `T` is a trivial data type in a safe zone (no pointer fields, not an `_Owned struct`; outside safe zones always allowed); otherwise the conversion is **forbidden**, even with an explicit cast
   ```c
   struct S { int *ptr; };
   int a = 0; struct S s = {.ptr = nullptr};
   _Safe {
       int *_Borrow p1 = &_Mut a;
       void *_Borrow p2 = p1;                       // ok: int is trivial
+      void *_Borrow p2e = (void *_Borrow)p1;       // ok: explicit form
       struct S *_Borrow p3 = &_Mut s;
       void *_Borrow p4 = (void *_Borrow)p3;        // error: S has pointer field
   }
@@ -139,7 +140,7 @@ Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, mem
 - **`void *_Borrow` → `T *_Borrow`**: implicit conversion **forbidden**; explicit cast must be in `_Unsafe`
 - **Between `_Borrow` and raw pointer**: forbidden in `_Safe` zones; outside `_Safe`, casts go through the raw `T *` intermediate, never directly
 - **Between `_Owned` and `_Borrow`**: C-style casts in either direction are **forbidden**
-- **Between mutable and immutable borrows**: explicit cast is forbidden. Mutable→immutable is implicit (compiler inserts `&_Const *`); the reverse is never allowed
+- **Between mutable and immutable borrows**: explicit cast is forbidden. Mutable→immutable is implicit (compiler inserts `&_Const *`); the reverse is never allowed. The implicit conversion also targets `const void *_Borrow` directly (since 2026-08): `T *_Borrow` → `const void *_Borrow` in one step, combining both rules' conditions (safe zone requires `T` `is_trivial_data`). The explicit C-style spelling of a mut→const conversion stays forbidden — including `(const void *_Borrow)p` on a mutable `p`
 - **`T *_Borrow _ArrayElem` → `T *_Borrow`**: allowed as an implicit conversion (equivalent to "re-borrow at the current element, dropping array-iteration semantics"). The reverse `T *_Borrow` → `T *_Borrow _ArrayElem` is forbidden
 - **Implicit `_Bool` conversion**: `_Borrow _Nullable` pointers can be used in conditions
 
@@ -358,6 +359,14 @@ Rules specific to `_Borrow _ArrayElem`:
 - **Implicit downgrade** `T *_Borrow _ArrayElem` → `T *_Borrow` is allowed
   (equivalent to "take a fresh plain borrow at the current element"). The
   reverse explicit cast is **forbidden**.
+- **Void-target implicit conversions** (since 2026-08): `T *_Borrow _ArrayElem`
+  implicitly converts to `void *_Borrow _ArrayElem`, `const void *_Borrow
+  _ArrayElem`, `void *_Borrow`, and `const void *_Borrow` (safe zone requires
+  `T` `is_trivial_data`; outside always allowed; const targets auto-insert
+  `&_Const *`). Explicitly C-style-casting to the const forms is forbidden, and
+  **no other pointee-changing `_Borrow _ArrayElem` conversion exists in either
+  zone** — the old rule that `_Unsafe` code could cast between arbitrary
+  `_ArrayElem` pointee types was removed.
 - For mixed `_Safe`/`_Unsafe` declarations, `_Borrow _ArrayElem` is a single
   qualifier unit — a `_Safe` redeclaration may add `_Borrow _ArrayElem` to a
   bare-pointer `_Unsafe` parameter, but cannot swap between `_Borrow` and

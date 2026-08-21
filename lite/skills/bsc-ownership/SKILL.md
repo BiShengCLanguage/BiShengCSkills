@@ -103,11 +103,12 @@ Use `nullptr`, not `NULL`, in BSC code.
 
 ## 7. Where `_Owned` Is NOT Allowed
 
-- **Global variables** — cannot use `_Owned` on file-scope or `static` variables
+- **Global variables** — cannot use `_Owned` on file-scope or `static` variables (nor structs/arrays containing `_Owned` members)
 - **Union members** — `_Owned` cannot qualify a union member
-- **Array elements** — `int *_Owned arr[10]` is forbidden
 - **No `[]`, no arithmetic on `_Owned`** — for a heap array you want to index, use `T *_Owned _ArrayElem` with `safe_malloc_array` / `safe_free_array` (the array variants are the only way to legally subscript an owning pointer)
 - **`_Owned struct` definitions must be at file scope** — not inside a function body
+
+**Local** arrays of `_Owned` elements (`int *_Owned arr[10]`) are allowed, but the whole array shares one ownership state: transfer element ownership only in a full-range `for (int i = 0; i < N; i++)` loop that treats every element the same, or swap elements out with `safe_swap`. See the full `bsc-ownership` Skill §9.
 
 Use `_Owned` only on local variables, function parameters, return types, and struct fields.
 

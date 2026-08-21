@@ -74,19 +74,24 @@ In `_Safe` zones:
 - **No `&` address-of** — use `&_Const` or `&_Mut` to take borrows. Exception: taking the address of a function is allowed.
 - **No raw pointer dereference** (`*rawptr`, `rawptr->field`) — `_Owned` and `_Borrow` pointer dereference is OK
 - **No pointer category casts** — no casting between `_Owned`/`_Borrow`/raw pointers, no pointer-to-integer or integer-to-pointer casts. Exception: `T *_Owned` can be explicitly cast to `void *_Owned`.
-- **No casts between pointers of different pointed-to types**
+- **No casts between pointers of different pointed-to types** — with these same-category exceptions (all in the matrix below): owned/borrow pointers to `void`-pointee targets, and (since 2026-08) raw `T *` to `void *`, `const T *`, or `const void *` (the `void` targets require `T` `is_trivial_data`; implicit and explicit behave the same). The reverse raw casts (`void *`→`T *`, dropping `const`) stay forbidden in safe zones
 - **`nullptr` required** — `NULL` is forbidden in safe zones; use `nullptr` to initialize or compare pointers
 
 #### Pointer conversion matrix
 
 | Conversion | In `_Safe` | In `_Unsafe` |
 |---|---|---|
-| `T *_Borrow` → `void *_Borrow` (T is trivial data: no pointers, not `_Owned struct`) | **OK** (implicit) | OK |
-| `T *_Borrow` → `void *_Borrow` (T has pointer fields / is `_Owned struct`) | **Forbidden** (even with explicit cast) | Forbidden |
+| `T *_Borrow` → `void *_Borrow` (T is trivial data: no pointers, not `_Owned struct`) | **OK** (implicit or explicit) | OK |
+| `T *_Borrow` → `void *_Borrow` (T has pointer fields / is `_Owned struct`) | **Forbidden** (even with explicit cast) | OK (the trivial-data condition is safe-zone-only) |
+| `T *_Borrow` (mutable) → `const T *_Borrow` / `const void *_Borrow` | OK (**implicit only** — compiler inserts `&_Const *`; `const void` target needs trivial T; C-style cast forbidden) | OK (implicit only; `const void` always) |
 | `void *_Borrow` → `T *_Borrow` | **Forbidden** — explicit cast required, must be in `_Unsafe` | OK (explicit cast) |
 | `T *_Borrow _ArrayElem` → `T *_Borrow` | OK (implicit) | OK |
+| `T *_Borrow _ArrayElem` → `void *`/`const void *` `_Borrow [_ArrayElem]` | OK (implicit; trivial T; const targets not by explicit cast) | OK (implicit; always) |
+| `T *_Borrow _ArrayElem` → differently-typed `U *_Borrow _ArrayElem` | Forbidden | Forbidden (removed 2026-08; was allowed explicitly) |
 | `T *_Borrow` → `T *_Borrow _ArrayElem` | Forbidden | Forbidden |
 | `T *_Borrow` → raw `T *` | **Forbidden everywhere** | Forbidden everywhere |
+| raw `T *` → `void *` / `const void *` (trivial T) or `const T *` | **OK** (implicit or explicit; since 2026-08) | OK |
+| raw `void *` → `T *`, or `const T *` → `T *` | Forbidden (dropping `const` / refining `void` needs `_Unsafe`) | OK (explicit cast) |
 | `T *_Owned` → `void *_Owned` | OK (explicit cast) | OK |
 | `void *_Owned` → `T *_Owned` | Forbidden in `_Safe`; in `_Unsafe`, allowed but the resulting struct's inner `_Owned` members do NOT own anything | OK (explicit cast, same caveat) |
 | `T *_Owned` ↔ `T *_Owned _ArrayElem` (C cast) | Forbidden — these are distinct categories; use `safe_malloc_array`/`__take_array_from_raw` | Forbidden |
