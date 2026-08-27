@@ -49,6 +49,14 @@ _Safe void forget<T>(T t);
 
 **All `safe_*` functions are `_Safe`** — `safe_malloc`, `safe_calloc`, `safe_free`, `safe_malloc_array`, `safe_calloc_array`, `safe_free_array`, `safe_swap`, and `forget` can all be called **directly** from a `_Safe` function with **no `_Unsafe` wrap**. Only **raw** `malloc`/`free` need `_Unsafe`. (`safe_free`/`safe_free_array` still need the argument cast to `void *_Owned` / `void *_Owned _ArrayElem`.)
 
+**`forget<T>(t)` is not `__forget(p)`**: `forget<T>` is this `_Safe` library
+function — it *consumes a value* `t` (typically a whole `_Owned struct`) and
+drops it without running the destructor. `__forget(p)` is an `_Unsafe`-only
+**builtin** that takes an `_Owned` pointer **lvalue** and marks that variable
+Moved in the analyzer. Use `forget<T>` after a bit-copy that moved a struct;
+use `__forget` when an opaque callee took over a pointer's memory. See
+`bsc-ownership` §5.
+
 **`safe_calloc` vs `safe_malloc`**: `safe_calloc<T>()` takes **no** initializer — it zero-initializes everything, so pointer members come out `nullptr` (declare them `_Nullable`). `T` must be zero-initializable or it's a compile error. Same pairing as malloc: `safe_calloc` ↔ `safe_free`, `safe_calloc_array` ↔ `safe_free_array`.
 
 **Move-semantic element types** (since 2026-08 arrays of `_Owned`-containing `T` are legal — see `bsc-ownership` §9): `safe_malloc_array` **cannot** allocate them — its per-element copy of `initial` fails to instantiate (the header reports `memory leak because initializer.p is not freed or moved before 'initializer' goes out of scope`). Use `safe_calloc_array<T>` (fields come out `nullptr` ⇒ declare them `_Nullable`) or `__take_array_from_raw`. Freeing such an array must go through `__move_array_to_raw` + raw `free` in `_Unsafe` — the `(void *_Owned _ArrayElem)` cast for `safe_free_array` is rejected while the pointee's `_Owned` fields are (conservatively) considered owning; move values out with `safe_swap` first if you need them.

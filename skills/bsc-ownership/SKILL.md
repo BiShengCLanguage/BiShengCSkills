@@ -137,6 +137,63 @@ Assigning into an `_Owned _Nullable` that currently holds no ownership propagate
 
 Note: the deref and nullable→nonnull restrictions are enforced by the **nullability** analysis — with `-nullability-check` off (or outside its scope), only the ownership half applies.
 
+### `__forget` — explicitly drop ownership
+
+`__forget(p)` is a builtin that flips an `_Owned` pointer's state to **Moved**.
+Like `__assume_null`, it is a **pure analyzer hint** — no verification, no
+generated code; you promise `p` will never be freed or moved again.
+
+**`_Unsafe`-only**:
+
+```c
+_Safe void foo(int *_Owned p) {
+    __forget(p);  // error: __forget is forbidden in the safe zone
+}
+```
+
+After the call `p` needs no free and no transfer — **no leak at scope exit**:
+
+```c
+void forget_local(void) {
+    int *_Owned p = safe_malloc(42);
+    _Unsafe { __forget(p); }
+}   // ok — without the __forget this is
+    // error: memory leak because 'p' is not freed or moved before it goes out of scope
+```
+
+Using `p` afterwards is `error: use of moved value: 'p'`, but **reassigning**
+it is fine (Moved variables may be reassigned), and the new value resumes
+normal tracking:
+
+```c
+void reassign(void) {
+    int *_Owned p = safe_malloc(1);
+    _Unsafe { __forget(p); }
+    p = safe_malloc(2);   // ok
+    safe_free(p);
+}
+```
+
+Works on `_Owned` struct fields (`s.p`, `s->p`, `(*s).p`) — that field is then
+exempt from the field-leak check — and on `_Owned _Nullable` pointers.
+
+**Argument rules**:
+- Must be an `_Owned` pointer. A `_Borrow`, a raw pointer, or a non-pointer is
+  `error: __forget requires an _Owned pointer argument`
+- Must be a **variable or struct field access**, optionally in parens or
+  implicit casts. `arr[0]`, `*q`, casts, ternaries, and comma expressions give
+  `error: unsupported __forget argument` plus
+  `note: the argument must be a variable or struct field access`
+
+> **`__forget(p)` vs `forget<T>(t)`**: different tools with similar names.
+> `forget<T>` is a `_Safe` **library function** (`bishengc_safety.hbs`) that
+> *consumes a value* by taking ownership of it and dropping it. `__forget` is
+> an `_Unsafe`-only **builtin** that takes an `_Owned` pointer **lvalue** and
+> rewrites the analyzer's state for that variable in place.
+
+> For `__assume_null` (the nullability counterpart, which also drops ownership
+> of an `_Owned _Nullable`), see `bsc-nullability` §9.
+
 ### Logical and conditional operators
 - Logical operators (`!`, `&&`, `||`) work on `_Owned` pointers (null checks, no ownership consumed)
 - `_Owned` pointers can be conditions in `if`/`while`/`do-while`/`for`/ternary, but **NOT** `switch`

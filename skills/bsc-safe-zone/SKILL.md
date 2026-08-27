@@ -161,6 +161,7 @@ _Safe void foo(void) {
 - **`static` locals are allowed** in a safe zone (previously rejected as "mutable globals"). Constraints: the variable **cannot** be `_Owned`, `_Borrow`, or an `_Owned struct` type (compile error), and — like a global — it can only be `&_Const`-borrowed, never `&_Mut`
 - **String-literal array init**: a `char` array initialized from a string literal must be at least as long as the literal **including** the trailing `\0` — `char a[3] = "abc";` is an error (needs 4), `char a[4] = "abc";` is ok
 - **Array subscript/deref is allowed**: although raw-pointer deref is forbidden, indexing or dereferencing an **array** lvalue (`arr[i]`, `*arr`) is fine — the compiler treats it as a direct array operation, not as deref of the decayed raw pointer
+- **No analyzer-hint builtins** — `__assume_null` and `__forget` are rejected by name (`error: __assume_null is forbidden in the safe zone`); `__assume_initialized` is rejected via its `&` operand (`error: '&' operator is forbidden in the safe zone`). All three rewrite analysis state without verification, so all three need `_Unsafe`
 - **No inline assembly**
 - **No calling unsafe functions** — must wrap in `_Unsafe {}`
 - **Empty params require `void`**: `_Safe void f(void)` — not `_Safe void f()`

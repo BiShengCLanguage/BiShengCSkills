@@ -38,9 +38,9 @@ These work inside `_Safe` code and are covered by the initialization analysis
 | Generics | `<T>`, `<T, int N>` | Compile-time monomorphization, constant generics, type aliases |
 | Traits ⚠️ | `_Trait`, `_Impl`, `This*` | Interface abstraction with vtable dynamic dispatch |
 | Operator overloading ⚠️ | `__attribute__((operator OP))` | Overload operators for user-defined types |
-| Ownership | `_Owned`, `_ArrayElem`, `_Nullable`, `_Nonnull`, `_Public` | Move semantics, RAII destructors, compile-time memory safety (`_Owned struct` itself is ⚠️) |
+| Ownership | `_Owned`, `_ArrayElem`, `_Nullable`, `_Nonnull`, `_Public`, `__forget` | Move semantics, RAII destructors, compile-time memory safety (`_Owned struct` itself is ⚠️) |
 | Borrowing | `_Borrow`, `_ArrayElem`, `&_Const`, `&_Mut` | Non-owning references with lifetime enforcement |
-| Nullability | `_Nullable`, `_Nonnull`, `nullptr` | Compile-time null-safety checking |
+| Nullability | `_Nullable`, `_Nonnull`, `nullptr`, `__assume_null` | Compile-time null-safety checking |
 | Safe zones | `_Safe`, `_Unsafe` | Compiler-enforced memory safety regions |
 | Initialization analysis | `__attribute__((ensure_init))`, `__attribute__((ensure_init_if_ret))`, `__assume_initialized` | Field-level uninitialized variable detection |
 | Coroutines ⚠️ | `_Async`, `_Await`, `Future` | Stackless coroutines with poll-based execution |
@@ -81,6 +81,8 @@ These work inside `_Safe` code and are covered by the initialization analysis
 | Destructor | `~TypeName(TypeName this) { ... }` (inside `_Owned struct`) |
 | ensure_init | `void f(int *__attribute__((ensure_init)) out)` |
 | assume init | `_Unsafe { __assume_initialized(&x); }` |
+| assume null | `_Unsafe { __assume_null(p); }` — assert `_Nullable` `p` is null |
+| forget ownership | `_Unsafe { __forget(p); }` — drop `_Owned` `p`'s ownership |
 
 ## 4. Skill Index
 

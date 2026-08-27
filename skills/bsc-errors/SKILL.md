@@ -72,6 +72,8 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 | E0118 | Memory leak (owned not freed) | Free, return, or transfer before scope ends |
 | E0119 | Field memory leak | Free _Owned struct fields before scope ends |
 | E0126 | Temporary variable memory leak | Capture return value of _Owned-returning function |
+| *(OWN-050)* | __forget requires an _Owned pointer argument | Pass an `_Owned` pointer; `_Borrow`/raw/non-pointer are rejected |
+| *(OWN-051)* | unsupported __forget argument | Use a variable or struct field; bind `arr[0]`/`*q`/casts to a local first |
 
 ### Borrow (BSC-E02xx)
 
@@ -104,6 +106,8 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 | E0403 | Cannot return possibly-null status pointer 'p' as a '_Nonnull' pointer | Add null check or change return type to `_Nullable` |
 | E0406 | Cannot assign possibly-null status pointer 'p' to a '_Nonnull' pointer | Guard with null check before assignment |
 | E0407 | _Nonnull pointer must be initialized | Initialize at declaration |
+| *(NULLABLE-006)* | __assume_null requires a _Nullable pointer argument | Pass a `_Nullable` pointer; `_Nonnull`/plain `_Owned`/non-pointer are rejected |
+| *(NULLABLE-007)* | unsupported __assume_null argument | Use a variable or struct field; bind `*q`/`arr[0]`/casts to a local first |
 
 > **2026-08 diagnostic rework**: BSC error messages were reworded to state the
 > violated rule and name the operands, quoting names LLVM-style (`'x'`, not
@@ -112,6 +116,13 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 > are unchanged. New in 2026-08: array-element ownership errors
 > (`err_ownership_array_elem_transfer_forbidden`, `..._path_inconsistent`,
 > `..._assign_owned`) — see `bsc-ownership` §9.
+
+> **New in 2026-08**: two analyzer-hint builtins, both `_Unsafe`-only and both
+> rejecting any argument that is not a variable or struct field access —
+> `__assume_null` and `__forget`. These have no `BSC-Exxxx` code assigned yet;
+> the rows above cite the upstream catalog ids. Calling either in a safe zone reports
+> `<name> is forbidden in the safe zone` (E0301). See `bsc-nullability` §9 and
+> `bsc-ownership` §5.
 
 > For detailed per-category documentation, see the `errors/` directory.
 > For common fixes, see `bsc-common-mistakes` Skill.

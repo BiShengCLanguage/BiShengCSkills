@@ -218,7 +218,67 @@ _Safe void test(void) {
 }
 ```
 
-## 9. Compiler Options
+## 9. `__assume_null`
+
+`__assume_null(p)` is a builtin that asserts a `_Nullable` pointer is null at
+this program point. It is a **pure analyzer hint** — the compiler verifies
+nothing and emits no code; you are promising the assertion holds.
+
+**`_Unsafe`-only** — it bypasses the nullability checker:
+
+```c
+_Safe void foo(int *_Owned _Nullable p) {
+    __assume_null(p);  // error: __assume_null is forbidden in the safe zone
+}
+```
+
+**On `_Owned _Nullable`** — the pointer becomes definitely null *and holds no
+ownership*, so no leak is reported. This is the point of the builtin: after an
+opaque callee frees through a borrow, the analyzer cannot see that `p` was
+freed and nulled.
+
+```c
+_Safe void MemFree(void *_Owned _Nullable *_Borrow ptr);
+
+_Safe void foo(void *_Owned _Nullable p) {
+    MemFree(&_Mut p);
+    _Unsafe { __assume_null(p); }
+    // no forget(p), no p = nullptr, no leak
+}
+```
+
+Without the `__assume_null`, that function is
+`error: memory leak because 'p' is not freed or moved before it goes out of scope`.
+
+**On any other `_Nullable`** — the pointer is treated as definitely null.
+A later dereference without a fresh null check is an error, and **any earlier
+null-check narrowing is invalidated**:
+
+```c
+void bar(int *_Nullable p) {
+    if (p != nullptr) {
+        _Unsafe { __assume_null(p); }
+        *p = 2;  // error: cannot dereference possibly-null status pointer 'p'
+    }
+}
+```
+
+A *new* null check after the assumption narrows it again as usual.
+
+**Argument rules**:
+- Must be a `_Nullable` pointer. A `_Nonnull` pointer, a plain `_Owned`
+  pointer, or a non-pointer is `error: __assume_null requires a _Nullable pointer argument`
+- Must be a **variable or struct field access** (`p`, `s.p`), optionally in
+  parens or implicit casts. A dereference chain (`*q`), `arr[0]`, a cast, a
+  ternary, or a comma expression gives
+  `error: unsupported __assume_null argument` plus
+  `note: the argument must be a variable or struct field access`.
+  Bind the value to a local first if you need one of those forms.
+
+> Compare `__forget(p)` (`bsc-ownership` §5), which drops ownership of a
+> **non-nullable** `_Owned` pointer without asserting anything about null.
+
+## 10. Compiler Options
 
 `-nullability-check=<mode>`:
 
