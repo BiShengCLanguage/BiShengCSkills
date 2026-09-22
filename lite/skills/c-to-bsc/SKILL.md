@@ -192,7 +192,7 @@ if (cond) {
 safe_free((void *_Nullable _Owned)item);   // safe for nullable
 ```
 
-Use `nullptr` instead of `NULL` in BSC code.
+Prefer `nullptr` in BSC code; `NULL` is also accepted since 2026-09.
 
 ## Step 8: Compile
 
@@ -224,6 +224,6 @@ Fix errors iteratively. The most common errors:
 - [ ] `malloc` → `safe_malloc<T>(val)` where size is a single `T`
 - [ ] `free` → `safe_free((void *_Owned)p)` or `safe_free((void *_Nullable _Owned)p)`
 - [ ] Plain `&` in `_Safe` converted to `&_Const` or `&_Mut`
-- [ ] `NULL` → `nullptr`
+- [ ] `NULL` → `nullptr` (optional since 2026-09; `NULL` compiles, `nullptr` is idiomatic)
 - [ ] `_Owned` pointers that can be null marked `_Nullable`
 - [ ] Code compiles with `clang -x bsc file.c -fsyntax-only`

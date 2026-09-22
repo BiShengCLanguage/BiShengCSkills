@@ -116,19 +116,47 @@ typedef Int64 = long int;
 - Cannot define type aliases inside struct bodies
 - Cannot extend member functions on a generic type alias
 
-## 6. Conditional Type Alias
+## 6. Conditional Types: `__conditional` and `conditional<>`
 
-Requires `#include <bsc_conditional.hbs>`.
+`__conditional(C, T, F)` is a built-in **type expression** (no header needed):
+`C` is an integer constant expression, `T`/`F` are types; the result is `T`
+when `C` is non-zero, else `F`.
+
+```c
+__conditional(1, int, double) a = 1;    // int
+__conditional(0, int, double) b = 1.0;  // double
+```
+
+`conditional<C, T, F>` is the generic-alias wrapper from `bsc_conditional.hbs`:
 
 ```c
 #include <bsc_conditional.hbs>
-
-// conditional<C, T, F>: when C is non-zero → type T; when C is zero → type F
-typedef conditional<int C, T, F> = __conditional(int C, T, F);
+// typedef conditional<int C, T, F> = __conditional(C, T, F);
 
 conditional<1, int, float> x = 42;     // x is int
 conditional<0, int, float> y = 3.14;   // y is float
 ```
+
+**They differ in what gets instantiated** (verified 2026-09):
+
+- `conditional<C, T, F>` always instantiates **both** `T` and `F`, whichever
+  is chosen — an ill-formed unselected branch is still an error.
+- `__conditional(C, T, F)` instantiates **only the selected branch**; the other
+  is skipped without any syntactic or semantic check (it just must not be
+  empty) — even an undeclared type name there compiles.
+
+```c
+typedef Owned<T> = T _Owned;                              // error for function-pointer T
+typedef Identity1<T> = __conditional(1, T, Owned<T>);
+typedef Identity2<T> = conditional<1, T, Owned<T>>;
+void foo(void) {
+    Identity1<void(*)(void)> a = nullptr;  // ok: Owned<T> never instantiated
+    Identity2<void(*)(void)> b = nullptr;  // error: type of 'void (*)(void)' cannot be qualified by '_Owned'
+}
+```
+
+Reach for `__conditional` when the unselected branch may be invalid for some
+`T`; use `conditional<>` for the ordinary generic-syntax case.
 
 Use case — selecting types based on generic parameters:
 

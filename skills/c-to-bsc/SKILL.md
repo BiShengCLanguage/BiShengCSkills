@@ -87,7 +87,7 @@ cJSON *_Owned _Nullable item = nullptr;
 cJSON *_Owned item = safe_malloc<cJSON>((cJSON){0});
 ```
 
-**Rule**: If an `_Owned` variable is ever assigned `NULL`/`nullptr`, initialized to `NULL`, or checked against `NULL`, it MUST be declared `T *_Owned _Nullable`. Use `nullptr` instead of `NULL` in BSC code.
+**Rule**: If an `_Owned` variable is ever assigned `NULL`/`nullptr`, initialized to `NULL`, or checked against `NULL`, it MUST be declared `T *_Owned _Nullable`. Prefer `nullptr` in BSC code; since 2026-09 `NULL` is accepted as a null pointer constant everywhere `nullptr` is (including `_Safe` zones), so leaving `NULL` in translated code is no longer a compile error — the `_Nullable` annotation is what matters.
 
 ## Translation Process
 
@@ -433,11 +433,11 @@ typedef struct Token {
 
 #### `_Borrow` as a struct field — tightly restricted, don't use for back-references
 
-Per user manual §3.2.6, struct `_Borrow` fields are subject to rules that rule out most C patterns:
+Per user manual §3.2.6, a struct with `_Borrow` members gets **one NLL for the whole struct**: each borrow member lives as long as the struct, and the struct's borrowed objects are the union of the members' — which rules out most C patterns (behaviour re-verified 2026-09):
 
-1. A struct's `_Borrow` field **cannot borrow from the containing struct or its other fields** (rule 3). So `s.p = &_Const s.m` errors.
-2. A struct containing a `_Borrow` field **cannot itself be borrowed** (rule 5). This cascades: once `T` has a `_Borrow` member, `T *_Borrow` is illegal.
-3. Heap-allocated structs where `_Borrow` fields cross-reference other heap nodes — classic linked list / tree with parent pointers — **do not satisfy the borrow checker's lifetime model**. The target of the borrow could be freed independently.
+1. A struct's `_Borrow` field borrowing the containing struct's own field (`s.p = &_Mut s.m`) now *compiles*, but `s.m` stays frozen until `s` goes out of scope, even after the last use of `s.p` (`cannot assign to 's.m' because it is borrowed`). Useless in practice.
+2. Since 2026-09 a struct containing a `_Borrow` field **can** itself be borrowed (`struct R *_Borrow rb = &_Mut r;` — multi-level borrows, see `bsc-borrowing` §13). The old cascade "once `T` has a `_Borrow` member, `T *_Borrow` is illegal" no longer applies.
+3. Heap-allocated structs where `_Borrow` fields cross-reference other heap nodes — classic linked list / tree with parent pointers — still **do not satisfy the borrow checker's lifetime model**. The target of the borrow could be freed independently.
 
 **For back-references in linked lists, trees, graphs, observer patterns**: use raw pointers (no annotation) with access wrapped in `_Unsafe`. See §"Circular structures" below. The stdlib `LinkedList<T>` (`libcbs/src/list/list.hbs`) uses raw pointers for exactly this reason:
 
@@ -469,6 +469,26 @@ void container_add(Container *c, Node *item) { ... c takes ownership of item ...
 // AFTER (BSC)
 void container_add(Container *_Borrow c, Node *_Owned item) { ... }
 ```
+
+#### Array parameters whose elements are owned — the callee only borrows them
+
+A C parameter `T a[N]` becomes raw `T *a` as usual **unless** the translated
+`T` is, or contains, an `_Owned`/`_Borrow` pointer; then BSC adjusts it to
+`T *_Borrow _ArrayElem a` (2026-09). The elements are borrowed inside the
+callee, so a C function that frees or hands off the elements cannot be
+translated 1:1:
+
+```c
+// C: void free_all(char *names[], int n) { for (...) free(names[i]); }
+_Safe void free_all(char *_Owned names[], int n) {
+    // safe_free((void *_Owned)names[i]);   // error: cannot take ownership of a borrowed value
+}
+// Options: take `char *_Owned _ArrayElem names` (a heap array the callee owns),
+// or keep the borrow and `safe_swap` elements out, or do it at the call site.
+```
+
+The caller keeps ownership when it passes an `_Owned` array (the array decays
+to the borrow) and must still free the elements. See `bsc-borrowing` §12.2.
 
 #### Function returns — transferring ownership
 ```c
@@ -1294,12 +1314,12 @@ cJSON *_Owned detach_item(cJSON *parent) {
 ```
 **Note**: `__take_from_raw` preserves nullability of its argument. If `item` could be null and nullability-check is on, either null-check first or declare the return type `cJSON *_Owned _Nullable`.
 
-### Error 5: Using `NULL` instead of `nullptr` for `_Owned` pointers
+### Error 5: `NULL` into an `_Owned` pointer that is not `_Nullable`
 ```c
-// WRONG — NULL is C macro, not BSC-aware
-cJSON *_Owned _Nullable item = NULL;
+// WRONG — the problem is the missing _Nullable, not the spelling of null
+cJSON *_Owned item = NULL;           // error: cannot assign a possibly-null status pointer to a '_Nonnull' pointer
 
-// FIX — use nullptr in BSC
+// FIX — add _Nullable; nullptr is idiomatic, NULL also compiles since 2026-09
 cJSON *_Owned _Nullable item = nullptr;
 ```
 
@@ -1427,13 +1447,13 @@ back to Step B.
 - [ ] **No raw `mem*` on owning types**: every `memcpy`/`memmove`/`memset` over a struct containing `*_Owned` or `_Owned struct` members is wrapped in `_Unsafe` and paired with `forget<T>(src)` (ownership transferred) or prior `safe_free` of the fields (pre-overwrite)
 - [ ] **Cycles and shared ownership decided deliberately**: single-owner lists/trees use Pattern A (raw pointers + `_Unsafe` + custom destructor, like stdlib `LinkedList<T>`). Only reach for Pattern B (`Rc`+`Weak`+`RefCell`) when nodes are genuinely shared or leaf-up traversal is needed. `Weak<T>` fields are typed `Option<Weak<T>>` because `Weak::new` requires an existing `Rc`.
 - [ ] **Conditional ownership** patterns handled with `_Unsafe` or restructuring
-- [ ] **`_Owned` + NULL**: Every `_Owned` pointer that can be NULL uses `_Nullable` and `nullptr`
+- [ ] **`_Owned` + NULL**: Every `_Owned` pointer that can be NULL uses `_Nullable` (spell the null as `nullptr`; `NULL` also compiles since 2026-09)
 - [ ] **No use-after-move**: After passing `_Owned` to a consuming function, only use raw aliases
 - [ ] **`goto` cleanup paths**: `_Owned _Nullable` used for variables freed in error handlers
 - [ ] **Qualifier placement**: `T *_Owned`, never `_Owned T*`
 - [ ] **Non-zero annotations**: Translation contains `_Owned` on allocating functions, freeing functions, and owned struct fields. Zero `_Owned` = incomplete translation.
 - [ ] **No hook/allocator indirection**: Custom allocator structs removed, replaced with direct malloc/free
-- [ ] **Nullability**: Pointers that can be null use `_Nullable`; `nullptr` used instead of `NULL` in BSC
+- [ ] **Nullability**: Pointers that can be null use `_Nullable`; prefer `nullptr` over `NULL` (both accepted)
 - [ ] **Initialization**: Variables initialized before use in `_Safe` zones; arrays use init lists (not element-by-element)
 - [ ] **Project compile command** (from `CLAUDE.md`) runs clean on the changed files. NOT a generic `clang file.cbs` — the project's actual command. If `CLAUDE.md` has no compile command, the model has STOPPED and asked the user (see "Verification Workflow")
 - [ ] **Project test suite** runs clean on the changed files (or the absence of a test suite is reported explicitly)

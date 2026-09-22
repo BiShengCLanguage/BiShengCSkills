@@ -99,7 +99,7 @@ if (condition) {
 safe_free((void *_Nullable _Owned)p);    // safe even if null
 ```
 
-Use `nullptr`, not `NULL`, in BSC code.
+Prefer `nullptr` in BSC code (`NULL` is also accepted since 2026-09).
 
 ## 7. Where `_Owned` Is NOT Allowed
 

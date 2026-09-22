@@ -418,14 +418,17 @@ must be released, no implicit cast to/from raw, etc.) with these differences:
   - `__take_array_from_raw(p)` — takes a raw pointer as `_Owned _ArrayElem`
 - **C-style casts between `T *`, `T *_Owned`, and `T *_Owned _ArrayElem` are
   forbidden** — these three are distinct categories. Use the array builtins.
-- The pointee type `T` (and, recursively, its members) **cannot be or contain
-  `_Borrow` pointers** (`pointee type of '...' cannot be _Borrow pointers or
-  contain _Borrow qualified fields`). Pointees that are `_Owned` pointers or
-  structs **containing `_Owned` members are allowed** (relaxed 2026-08; used to
-  be forbidden) — such heap arrays follow the whole-array ownership rules of §9,
-  and `safe_malloc_array` cannot allocate them (its per-element copy of the
-  initializer would move it repeatedly); use `safe_calloc_array<T>` or
-  `__take_array_from_raw` instead.
+- The pointee type `T` may be anything, including `_Borrow` pointers and
+  structs containing them (the 2026-08 "cannot be or contain `_Borrow`"
+  restriction was dropped in 2026-09 together with the multi-level-borrow ban).
+  Pointees that are `_Owned` pointers or structs **containing `_Owned` members
+  are allowed** (relaxed 2026-08) — such heap arrays follow the whole-array
+  ownership rules of §9, and `safe_malloc_array` cannot allocate them (its
+  per-element copy of the initializer would move it repeatedly); use
+  `safe_calloc_array<T>` or `__take_array_from_raw` instead.
+- **No bounds checking**: `_ArrayElem` records "points into an array", not the
+  length. `p[i]` past the end compiles even in `_Safe` code — safe zones give no
+  spatial memory-safety guarantee for `_ArrayElem` pointers.
 - `_ArrayElem` cannot modify a **raw** pointer; it only attaches to `_Owned` or
   `_Borrow`.
 
@@ -495,7 +498,8 @@ _Safe void test(void) {
 
 ### 9.1 What makes a for-loop "qualified"
 
-For an array `a` of length `N`, all of the following:
+For an array `a` **whose type carries its length** (fixed-size arrays and
+VLAs), all of the following:
 
 1. Init: `for (T i = 0; ...)` — `T` an integer type, start at 0, step exactly
    +1 (`i++`, `++i`, `i += 1`).
@@ -514,6 +518,23 @@ indices (`if (i != 1) safe_free(...)`) is an error
 (``ownership state of array element `a` is inconsistent across paths in
 for-loop body``). A null-check skip is fine: null elements count as not owning,
 so `if (a[i] != nullptr) safe_free(...)` passes.
+
+**Flexible array members never qualify** (since 2026-09). For
+`struct S { int len; int *_Owned arr[]; };` the array type has no length, so
+no loop bound can be checked against it — `for (int i = 0; i < s->len; i++)
+safe_free((void *_Owned)s->arr[i]);` is ``cannot transfer ownership of array
+element `s` outside a qualifying for-loop`` with `note: for-loop is not a
+qualifying for-loop: condition must be `i < N` where N is the array length`
+(verified; the same loop over a fixed-size member `int *_Owned arr[3]` passes).
+Such members can only be moved via `safe_swap`, or handled in `_Unsafe`.
+
+**Array parameters** (since 2026-09): a parameter `T a[N]` whose `T` is or
+contains `_Owned`/`_Borrow` is adjusted to `T *_Borrow _ArrayElem a`, not to a
+raw pointer — inside the callee the elements are *borrowed*, so no qualified
+loop can move them out (`cannot take ownership of a borrowed value` + `note:
+array parameter 'a' is adjusted to a '_Borrow _ArrayElem' pointer; its
+elements are borrowed and cannot be moved out`). The caller keeps ownership.
+See `bsc-borrowing` §12.2.
 
 ### 9.2 Assigning into elements
 

@@ -60,6 +60,14 @@ attribute and its tracked null-state match `p`'s. Borrowing a maybe-null
 `_Borrow _Nonnull` is `error: cannot assign possibly-null status pointer 'p'
 to a '_Nonnull' pointer`; store it in a `T *_Borrow _Nullable` instead.
 
+Parenthesized and `_Safe`/`_Unsafe`-wrapped spellings are the same operation:
+`&_Mut (*p)`, `&_Mut *(p)`, `&_Mut ((*(p)))` and `&_Mut _Unsafe(*p)` are all
+equivalent to `&_Mut *p` — none evaluates `*p`, and all inherit `p`'s
+nullability (verified 2026-09).
+
+`&_Mut p` / `&_Const p` where `p` is itself a borrow lvalue is allowed since
+2026-09 and yields a **multi-level borrow** (`int *_Borrow *_Borrow`) — see §13.
+
 ## 3. Semantics
 
 | Type | Access | Aliasing |
@@ -67,7 +75,7 @@ to a '_Nonnull' pointer`; store it in a `T *_Borrow _Nullable` instead.
 | `const T *_Borrow` | Read only | Multiple allowed simultaneously |
 | `T *_Borrow` | Read + Write | Exactly one at a time |
 
-Mutable borrows implicitly convert to immutable: `T *_Borrow` -> `const T *_Borrow` (compiler inserts `&_Const *`). This works in declarations, assignments, function args, and returns.
+Mutable borrows implicitly convert to immutable: `T *_Borrow` -> `const T *_Borrow` (an implicit reborrow, `&_Const *`). This works in declarations, assignments, function args, and returns.
 
 ## 4. Non-Lexical Lifetimes (NLL)
 
@@ -86,25 +94,44 @@ void foo() {
 }
 ```
 
-Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, member access `p->field`, assignment `q = p`, re-borrow `&_Mut *p` / `&_Const *p`, and type conversions of `p`. For a `_Borrow _ArrayElem` pointer, subscript `p[i]`, pointer arithmetic (`p + n`, `p += n`, `++p`, …), and pointer subtraction `p - q` are uses too.
+Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, member access `p->field`, assignment `q = p`, re-borrow `&_Mut *p` / `&_Const *p`, borrowing the borrow itself `&_Mut p` / `&_Const p`, and type conversions of `p`. For a `_Borrow _ArrayElem` pointer, subscript `p[i]`, pointer arithmetic (`p + n`, `p += n`, `++p`, …), and pointer subtraction `p - q` are uses too.
+
+**NLL is extended by an outer borrow** (since 2026-09): if a borrow lvalue `e`
+is itself borrowed (`e1 = &_Mut e` / `&_Const e`), `e`'s NLL lasts until the
+end of `e1`'s NLL, even if `e` is never used again directly. So the objects `e`
+borrows stay frozen for as long as `e1` is live:
+
+```c
+void usepp(int *_Borrow *_Borrow p) {}
+void f(void) {
+    int a = 1;
+    int *_Borrow p = &_Mut a;
+    int *_Borrow *_Borrow q = &_Mut p;
+    a = 5;      // error: cannot assign to 'a' because it is borrowed (p kept alive by q)
+    usepp(q);   // last use of q — p's NLL ends here too
+}
+```
+
+Terminology: the manual now says *borrow lvalue expression* (借用左值表达式)
+rather than *borrow variable*, because `*q`, `s.p` and the like are borrows too.
 
 ## 5. Rules
 
 - **`_Borrow` goes after the `*`**: write `int *_Borrow`, NOT `_Borrow int*`
-- While **immutable borrow** active: original is read-only, no mutable borrows allowed
-- While **mutable borrow** active: original is **frozen** — no reads, writes, moves, or borrows
+- While **immutable borrow** active: original is read-only, no mutable borrows allowed. If the borrowed expression is itself a `_Borrow` pointer, `*e` becomes read-only too; if it is a struct, all its members; if an array, all elements
+- While **mutable borrow** active: original is **frozen** — no reads, writes, moves, or borrows. Same propagation: `&_Mut p` on a borrow `p` also freezes `*p` (`*p = 3` is `error: cannot assign to '*p' because it is borrowed`), a struct freezes all members, an array all elements
 - **Struct field borrows**: `&_Mut e.field` freezes only **that field** (blocks whole-struct modification); other fields remain accessible. `&_Const e.field` puts the field into read-only state
 - Borrow lifetime <= borrowed value's lifetime (compiler enforced)
-- Cannot create borrow of a borrow: `int *_Borrow *_Borrow` is illegal
+- Borrow of a borrow (`int *_Borrow *_Borrow`) is **allowed since 2026-09** — see §13 for the extra rules that come with multi-level borrows
 - Borrow variables must be initialized at declaration
 - Cannot be global **or `static`** variables, nor union members
 - `_Owned` and `_Borrow` cannot coexist on same pointer: `int *_Owned _Borrow` is illegal
 - No indexing (`p[i]`) and no pointer arithmetic (`p + n`, `p++`) on **plain** borrow pointers. For an array-element borrow, use `_Borrow _ArrayElem` (see §12) — that variant supports `[]`, `+`, `-`, `+=`, `-=`, `++`, `--`
 - Cannot use `_Borrow` pointer type as a generic type argument
 - No `_Trait` impl for borrow types; no member functions for borrow types
-- Cannot take borrow of a struct that itself contains borrow members
+- A struct that contains `_Borrow` members **may** be borrowed (since 2026-09; used to be an error)
 - Globals **and `static` variables**: in safe zones, only immutable borrows (`&_Const`) allowed; no mutable borrows (we can't track reads/writes of global/static storage across function signatures)
-- String literals: `&_Mut "hello"` is forbidden; `&_Mut * "hello"` is forbidden
+- String literals: `&_Mut "hello"` is forbidden; `&_Mut * "hello"` is forbidden. A string literal's lifetime is the **whole program** (since 2026-09; was block-scoped), so a `const char *_Borrow` assigned from a literal inside an inner block is still valid after the block — unlike a compound literal `(int){5}`, which still dies at the end of its block (`'_borrowck_tmp_N' does not live long enough`)
 
 ### Reassignment rules
 - Reassignment of a borrow variable requires the same type and the new source must have a lifetime >= the borrow variable's remaining lifetime
@@ -137,10 +164,10 @@ Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, mem
       void *_Borrow p4 = (void *_Borrow)p3;        // error: S has pointer field
   }
   ```
-- **`void *_Borrow` → `T *_Borrow`**: implicit conversion **forbidden**; explicit cast must be in `_Unsafe`
+- **`void *_Borrow` → `T *_Borrow`** or **`T *_Borrow _ArrayElem`**: implicit conversion **forbidden**; explicit cast must be in `_Unsafe` (in a safe zone: `conversion from type 'void *_Borrow' to 'int *_Borrow _ArrayElem' is forbidden in the safe zone`). This is the only way any pointer type other than `_Borrow _ArrayElem` itself becomes a `_Borrow _ArrayElem` — plain `T *_Borrow` never does
 - **Between `_Borrow` and raw pointer**: forbidden in `_Safe` zones; outside `_Safe`, casts go through the raw `T *` intermediate, never directly
 - **Between `_Owned` and `_Borrow`**: C-style casts in either direction are **forbidden**
-- **Between mutable and immutable borrows**: explicit cast is forbidden. Mutable→immutable is implicit (compiler inserts `&_Const *`); the reverse is never allowed. The implicit conversion also targets `const void *_Borrow` directly (since 2026-08): `T *_Borrow` → `const void *_Borrow` in one step, combining both rules' conditions (safe zone requires `T` `is_trivial_data`). The explicit C-style spelling of a mut→const conversion stays forbidden — including `(const void *_Borrow)p` on a mutable `p`
+- **Between mutable and immutable borrows**: explicit cast is forbidden. Mutable→immutable is an implicit reborrow (`&_Const *`); the reverse is never allowed. The implicit conversion also targets `const void *_Borrow` directly (since 2026-08): `T *_Borrow` → `const void *_Borrow` in one step, combining both rules' conditions (safe zone requires `T` `is_trivial_data`). The explicit C-style spelling of a mut→const conversion stays forbidden — including `(const void *_Borrow)p` on a mutable `p`
 - **`T *_Borrow _ArrayElem` → `T *_Borrow`**: allowed as an implicit conversion (equivalent to "re-borrow at the current element, dropping array-iteration semantics"). The reverse `T *_Borrow` → `T *_Borrow _ArrayElem` is forbidden
 - **Implicit `_Bool` conversion**: `_Borrow _Nullable` pointers can be used in conditions
 
@@ -148,6 +175,7 @@ Uses that extend NLL: function calls `use(p)`, `return p`, dereference `*p`, mem
 
 - Borrow pointers can be used in `if`/`while`/`do-while`/`for`/ternary conditions, but **NOT** in `switch`
 - Forbidden operators on **plain** borrow pointers: `-`, `~`, `[]`, `++`, `--`, `*`(arithmetic), `/`, `%`, `&`(bitwise), `|`, `<<`, `>>`, binary `+`, binary `-`. `_Borrow _ArrayElem` re-enables `[]`, binary `+`/`-`, `+=`/`-=`, `++`/`--` (see §12). The rest stay forbidden
+- Unary `&` (raw address), `&_Const`, `&_Mut` (multi-level borrow, §13), `!`, and binary `&&`/`||` are allowed on borrow pointers
 - Comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) is allowed between same-typed borrows. Top-level `const`/`volatile`/`restrict` on the pointee are ignored when comparing — `int *_Borrow` and `const int *_Borrow` are comparable
 - `sizeof(T *_Borrow) == sizeof(T *)` and the same for `_Alignof`. `_Borrow _ArrayElem` has the same size/alignment as `T *`
 - String literals auto-borrow to `const char *_Borrow` when passed to a `const char *_Borrow` parameter (compiler inserts `&_Const *`)
@@ -170,6 +198,8 @@ _Safe int *_Borrow first(Vec<int> *_Borrow this) { ... }
 - If return is `_Borrow` and one param is `_Borrow`: return lifetime = param lifetime
 - If multiple `_Borrow` params: return lifetime = union of all param lifetimes
 - If no `_Borrow` params but return is `_Borrow`: **compile error** — borrow return requires at least one borrow parameter
+- The return type **cannot be a multi-level borrow**: `int *_Borrow *_Borrow f(int *_Borrow *_Borrow p);` is `error: function return type cannot contain multiple borrow regions`
+- If **any** borrow parameter is multi-level (`T *_Borrow *_Borrow pa1`), no assignment is allowed between `pa1`/`*pa1` and another borrow parameter `pa2`/`*pa2` (or locals aliasing them): `p = q;`, `*p = *q;` and `*p = q;` are each `error: lifetime may not live long enough`. Single-level parameters may still be assigned to each other
 
 ## 10. Design Patterns
 
@@ -362,11 +392,34 @@ Rules specific to `_Borrow _ArrayElem`:
 - **Void-target implicit conversions** (since 2026-08): `T *_Borrow _ArrayElem`
   implicitly converts to `void *_Borrow _ArrayElem`, `const void *_Borrow
   _ArrayElem`, `void *_Borrow`, and `const void *_Borrow` (safe zone requires
-  `T` `is_trivial_data`; outside always allowed; const targets auto-insert
-  `&_Const *`). Explicitly C-style-casting to the const forms is forbidden, and
-  **no other pointee-changing `_Borrow _ArrayElem` conversion exists in either
-  zone** — the old rule that `_Unsafe` code could cast between arbitrary
-  `_ArrayElem` pointee types was removed.
+  `T` `is_trivial_data` — `note: source pointee type 'struct S' is not a
+  trivial data type` otherwise; outside always allowed). The const targets are
+  implicit reborrows: a mutable `T *_Borrow _ArrayElem` also reborrows to
+  `const T *_Borrow _ArrayElem` and `const T *_Borrow`. Explicitly
+  C-style-casting to the const forms is forbidden. The **only** other
+  pointee-changing conversion is `void *_Borrow` → `T *_Borrow _ArrayElem` by
+  explicit cast in `_Unsafe` (§7); the old rule that `_Unsafe` code could cast
+  between arbitrary `_ArrayElem` pointee types was removed in 2026-08.
+- **Borrowing an element of a nullable pointer** (since 2026-09): for
+  `&_Mut a[i]` / `&_Const a[i]` where `a` is a pointer, index `0` (a constant)
+  is allowed on a maybe-null `a` and the result inherits `a`'s nullability;
+  any other index needs `a` definitely non-null
+  (`error: cannot dereference possibly-null status pointer 'p1'`). When `a` is
+  an array the result is always `_Nonnull`.
+  ```c
+  _Safe void foo(int *_Owned _ArrayElem _Nullable p1) {
+      int *_Borrow _ArrayElem _Nullable p2 = &_Mut p1[0]; // ok
+      int *_Borrow _ArrayElem _Nullable p3 = &_Mut p1[1]; // error: p1 may be null
+      if (p1) { int *_Borrow _ArrayElem p4 = &_Mut p1[1]; }  // ok
+  }
+  ```
+- The pointee `T` **may be or contain a `_Borrow` pointer** since 2026-09
+  (`int *_Borrow *_Borrow _ArrayElem` is legal; the old pointee-type
+  restriction was dropped along with the multi-level-borrow ban).
+- **No bounds checking.** `_ArrayElem` only records "points into an array",
+  not the length: `p[5]` on a borrow of `int arr[2]` compiles, even in a
+  `_Safe` zone. Safe zones give **no spatial memory-safety guarantee** for
+  `_ArrayElem` arithmetic/indexing — staying in bounds is on you.
 - For mixed `_Safe`/`_Unsafe` declarations, `_Borrow _ArrayElem` is a single
   qualifier unit — a `_Safe` redeclaration may add `_Borrow _ArrayElem` to a
   bare-pointer `_Unsafe` parameter, but cannot swap between `_Borrow` and
@@ -403,10 +456,85 @@ _Safe void foo(void) {
 
 Except for the operators above and these conversion rules, **everything else
 that applies to plain `_Borrow` (lifetime, freezing, NLL, nullability,
-type-compatibility, no-borrow-of-borrow, etc.) applies identically to
+type-compatibility, multi-level rules, etc.) applies identically to
 `_Borrow _ArrayElem`**. Most of the time you only see this type implicitly via
 `&_Mut arr[i]` and immediately bind it to a plain `_Borrow`; name it explicitly
 only when you need to subscript or step.
+
+### 12.2 Array parameters become `_Borrow _ArrayElem` when elements own or borrow
+
+C adjusts an array parameter `T a[N]` to a raw pointer `T *a`. BSC keeps that
+**unless `T` is, or is a struct containing, an `_Owned` or `_Borrow` pointer** —
+then the parameter is adjusted to `T *_Borrow _ArrayElem a` (since 2026-09):
+
+```c
+void f1(int a[10]);          // int *a                              (as in C)
+void f2(int *_Owned a[10]);  // int *_Owned *_Borrow _ArrayElem a
+struct S { int *_Owned ptr; };
+void f3(struct S a[20]);     // struct S *_Borrow _ArrayElem a
+```
+
+Consequences (all verified 2026-09):
+
+- The redeclarations `void f2(int *_Owned a[10]);` and
+  `void f2(int *_Owned *_Borrow _ArrayElem a);` are compatible.
+- Inside `f2`, the elements are **borrowed**: reading `*a[0]` is fine, but any
+  ownership transfer out of `a[i]` (`safe_free((void *_Owned)a[0])`, moving it
+  to a local, …) is `error: cannot take ownership of a borrowed value` with
+  `note: array parameter 'a' is adjusted to a '_Borrow _ArrayElem' pointer;
+  its elements are borrowed and cannot be moved out`.
+- At the call site, passing an `int *_Owned arr[2]` decays to the borrow
+  (§12.1) — the caller keeps ownership and must still free the elements.
+
+If the callee must consume the elements, take a `_Borrow` to the array and
+`safe_swap` them out, or pass a `T *_Owned _ArrayElem` heap array instead.
+
+## 13. Multi-Level Borrows (since 2026-09)
+
+Borrowing a borrow — `int *_Borrow *_Borrow` — is now legal, as is borrowing a
+struct that has `_Borrow` members. The types follow from the operator:
+`&_Mut p` on `int *_Borrow p` is `int *_Borrow *_Borrow`; `&_Const p` is
+`int *_Borrow const *_Borrow` (the `const` lands on the *outer* pointee).
+
+```c
+void baz(void) {
+    int a = 1, b = 2;
+    int *_Borrow p = &_Mut a;           // p borrows a
+    int *_Borrow *_Borrow q = &_Mut p;  // q borrows p (p and *p are frozen while q lives)
+    *q = &_Mut b;                       // p and *q now borrow {a, b}
+    b = 7;                              // error: cannot assign to 'b' because it is borrowed
+    use(*q); use(p);
+}
+```
+
+Rules on top of the usual ones (all verified against the 2026-09 compiler):
+
+- **Borrowed-object sets merge through assignment.** Assigning `*q = r`
+  (where `q` borrows `p`, so `p` and `*q` alias) adds `r`'s borrowed objects to
+  `p`'s — `b` above is frozen through `p` afterwards.
+- **Freezing propagates one level down.** `&_Mut p` freezes `p` *and* `*p`;
+  `&_Const p` makes `*p` read-only (`*p = 3` → `cannot assign to '*p' because
+  it is borrowed`; reading `*p` is fine). Structs freeze all members, arrays
+  all elements.
+- **NLL extension.** `p`'s NLL runs at least until the last use of any borrow
+  of `p` (§4), so the objects `p` borrows stay frozen that long.
+- **Exclusivity applies to the borrow itself**: two `&_Mut p` are `cannot
+  borrow 'p' as mutable more than once at a time`; `&_Mut p` then `&_Const p`
+  is `cannot borrow 'p' as immutable because it is also borrowed as mutable`.
+- **Functions**: the return type cannot be multi-level, and with any
+  multi-level borrow parameter the parameters (and their derefs) cannot be
+  assigned to each other (§9).
+- `_Borrow _ArrayElem` may point at borrows (`int *_Borrow *_Borrow _ArrayElem`), §12.
+- **Struct field borrowing a sibling field** (`s.p = &_Mut s.m`) compiles, but
+  a struct-member borrow lives as long as the struct (§3.2.6 of the manual), so
+  `s.m` stays frozen until `s` goes out of scope — `s.m = 2` after the last use
+  of `s.p` is still `cannot assign to 's.m' because it is borrowed`. Not a
+  useful pattern; keep back-references raw (see `c-to-bsc`).
+- **Not enforced at this tip**: the manual's rule that an inner borrow reached
+  only through immutable borrows is itself immutable (`int *_Borrow const
+  *_Borrow q = &_Const p; **q = 2;` should be an error). The 2026-09 compiler
+  accepts that write in every zone and diag mode — do not rely on the rule in
+  either direction.
 
 > For ownership (owning pointers), see `bsc-ownership` Skill
 > For safe zones that require borrows, see `bsc-safe-zone` Skill

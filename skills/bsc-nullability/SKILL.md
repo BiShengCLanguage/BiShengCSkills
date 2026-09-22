@@ -11,7 +11,8 @@ BSC tracks pointer nullability at compile time. The compiler prevents dereferenc
 
 - `_Nonnull` — pointer guaranteed non-null (default for `_Owned` and `_Borrow`)
 - `_Nullable` — pointer may be null (default for raw pointers)
-- `nullptr` — null pointer literal (replaces `NULL` in safe zones)
+- `nullptr` — BSC's null pointer literal
+- `NULL` — since 2026-09 C's `NULL` (`((void *)0)`) and every other null pointer constant (`0`, `(void *)(1 - 1)`, …) are accepted **everywhere `nullptr` is**: safe zones, `_Owned`/`_Borrow` initializers and assignments, explicit casts such as `(int *_Borrow)NULL` / `(int *_Borrow)0` (unsafe zone), and comparisons `p == NULL` / `NULL != p`, which narrow exactly like `nullptr`. `nullptr` is still the idiomatic spelling. What stays rejected is unchanged: `int *_Nonnull p = NULL;` and `int *_Owned p = NULL;` are `error: cannot assign a possibly-null status pointer to a '_Nonnull' pointer` (verified)
 
 ## 2. Default Nullability
 
@@ -137,7 +138,7 @@ In conditions of `if`/`while`/ternary, these patterns constitute null checks:
 
 1. **Direct pointer**: `if (p)` / `while (s.p)`
 2. **Logical operators**: `if (!p)` / `if (p && q)` / `if (p || q)`
-3. **Explicit comparison**: `if (p != nullptr)` / `if (nullptr == p)`
+3. **Explicit comparison**: `if (p != nullptr)` / `if (nullptr == p)` — `NULL` works the same way
 4. **With assignment**: `if ((q = p) != nullptr)` — only checks `q`
 5. **In comma expression**: `if ((x, p != nullptr))` — only checks last
 6. **Parentheses**: any of above can be nested in parens
@@ -168,9 +169,11 @@ _Safe int *_Borrow return_nonnull(int *_Borrow p) {
 
 For `_Owned _Nullable` pointers these rules combine with ownership tracking: a maybe-null `_Owned _Nullable` can only be moved into `_Nullable` receivers, a definitely-null one may be "moved" freely as a no-op and needs no free at scope exit. See `bsc-ownership` §5 for the full three-state rules.
 
-Borrows created via `&_Mut *p` / `&_Const *p` **inherit `p`'s nullability** (attribute and tracked state) — borrowing a nullable pointer yields a `_Nullable` borrow. The trait `is_nullable<T>()` (see `bsc-constexpr`) tests effective nullability at compile time, counting defaults: raw pointers default `_Nullable`, `_Owned`/`_Borrow` default `_Nonnull`.
+Borrows created via `&_Mut *p` / `&_Const *p` **inherit `p`'s nullability** (attribute and tracked state) — borrowing a nullable pointer yields a `_Nullable` borrow. Parenthesized and wrapped spellings (`&_Mut (*p)`, `&_Mut *(p)`, `&_Mut _Unsafe(*p)`) behave identically. For subscripts, `&_Mut a[0]` / `&_Const a[0]` (constant index 0) is allowed on a maybe-null pointer `a` and inherits its nullability; any other index requires `a` to be definitely non-null (`error: cannot dereference possibly-null status pointer 'a'`), and the result is `_Nonnull`. When `a` is an array the result is always `_Nonnull` (since 2026-09; see `bsc-borrowing` §12). The trait `is_nullable<T>()` (see `bsc-constexpr`) tests effective nullability at compile time, counting defaults: raw pointers default `_Nullable`, `_Owned`/`_Borrow` default `_Nonnull`.
 
 ## 7. Type Casting
+
+Null pointer constants may be cast to any pointer category: `(int *_Owned _Nullable)NULL`, `(int *_Borrow)NULL`, `(int *_Borrow)0` all compile in an unsafe zone (2026-09).
 
 With `-nullability-check=all`, casting Nullable to Nonnull in non-safe zones is also checked:
 
@@ -265,15 +268,51 @@ void bar(int *_Nullable p) {
 
 A *new* null check after the assumption narrows it again as usual.
 
-**Argument rules**:
-- Must be a `_Nullable` pointer. A `_Nonnull` pointer, a plain `_Owned`
-  pointer, or a non-pointer is `error: __assume_null requires a _Nullable pointer argument`
-- Must be a **variable or struct field access** (`p`, `s.p`), optionally in
-  parens or implicit casts. A dereference chain (`*q`), `arr[0]`, a cast, a
-  ternary, or a comma expression gives
-  `error: unsupported __assume_null argument` plus
-  `note: the argument must be a variable or struct field access`.
-  Bind the value to a local first if you need one of those forms.
+**Argument rules** (extended 2026-09, all verified):
+- Must be a **trackable expression**: a variable, a struct field access
+  (`s.p`, `s->p`), a pointer dereference chain (`*q`, `**q`), or those wrapped
+  in parens / implicit casts. A comma expression, a ternary, an explicit cast
+  (`(int *_Nullable)p`), a call, or an array subscript `arr[0]` is
+  `error: __assume_null requires a trackable expression as argument`. Bind such
+  a value to a local first.
+- Its type must be a **`_Nullable` pointer or a struct**. A `_Nonnull` pointer
+  or a plain `_Owned`/`_Borrow` pointer (`_Nonnull` by default) is
+  `error: __assume_null requires a _Nullable pointer argument`; a non-pointer,
+  non-struct such as `int x` is
+  `error: __assume_null requires an argument of pointer or struct type`.
+
+**Struct form** — `__assume_null(*s)` / `__assume_null(s)` asserts, for every
+`_Nullable` pointer field of the struct (recursively through embedded structs),
+that it is null, and for every `_Owned _Nullable` field that it holds no
+ownership. Nothing else changes: a later `*(s->p1) = 1` is
+`error: cannot dereference possibly-null status pointer 'p1'`, and a by-value
+`struct S s` parameter with two `_Owned _Nullable` fields reports no leak at
+scope exit (without the builtin the same function is `error: memory leak
+because s.p1, s.p2 are not freed or moved before 's' goes out of scope`).
+
+```c
+struct S { int *_Owned _Nullable p1; int *_Owned _Nullable p2; };
+_Safe void consumeS(struct S *_Owned s);
+_Safe void foo(struct S *_Owned s) {
+    _Unsafe { __assume_null(*s); }   // s->p1, s->p2 assumed null and unowned
+    consumeS(s);                     // moves s → no leak
+}
+```
+
+Struct-form restrictions:
+- The struct must not contain a `_Nonnull` field, directly or in an embedded
+  struct: `error: __assume_null is invalid because the struct contains a
+  _Nonnull field` + `note: a _Nonnull field cannot be assumed null; assume
+  each _Nullable field individually if needed` — i.e. write
+  `__assume_null(s->p)` per `_Nullable` field instead.
+- Array fields are **not covered** (no per-element null state):
+  `warning: __assume_null has no effect on array field 'ya' containing a
+  _Nullable pointer [-Wbsc-assume-null]`, and such a field still leaks if it
+  held ownership.
+- A struct with no `_Nullable` pointer field at all is a no-op:
+  `warning: __assume_null has no effect: the struct does not contain any
+  _Nullable pointer field [-Wbsc-assume-null]`. Note a bare `int *p` field
+  counts as `_Nullable` (the raw-pointer default), so it does not warn.
 
 > Compare `__forget(p)` (`bsc-ownership` §5), which drops ownership of a
 > **non-nullable** `_Owned` pointer without asserting anything about null.
@@ -288,6 +327,28 @@ A *new* null check after the assumption narrows it again as usual.
 | `all` | Check in all code (safe and non-safe) |
 
 Without the option, behavior is equivalent to `-nullability-check=safeonly`.
+The full BSC option list is in `bsc-compile` §2.
+
+## 11. Limitation: Pointer Aliasing Is Not Tracked
+
+The checker does not model aliases between raw pointers (or between a raw
+pointer and a safe pointer). Aliases created among *safe* pointers by borrowing
+and reborrowing are handled by the borrow rules, so a `_Safe` zone still has no
+null dereference — but in an unsafe zone, writing null through one alias and
+dereferencing through the other is **not reported**, even with
+`-nullability-check=all` (verified):
+
+```c
+void f(int **p) {
+    int **p2 = p;               // alias of p
+    if (p && *p && p2) {
+        *p2 = nullptr;          // nulls *p through the alias
+        **p = 10;               // real null dereference, no diagnostic
+    }
+}
+```
+
+If you want null safety in unsafe code, avoid introducing pointer aliases.
 
 > For ownership and `_Owned _Nullable`, see `bsc-ownership` Skill
 > For borrowing and `_Borrow _Nullable`, see `bsc-borrowing` Skill

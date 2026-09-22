@@ -85,6 +85,9 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 | E0204 | Cannot borrow as mutable more than once | Only one `&_Mut` at a time |
 | E0207 | Cannot return reference to local variable | Return by value or use `_Owned` heap allocation |
 | E0208 | Value does not live long enough | Ensure borrowed value outlives the borrow |
+| *(BOR-014)* | cannot take ownership of a borrowed value | Since 2026-09 also fires for array **parameters** with owned elements (note: `array parameter 'a' is adjusted to a '_Borrow _ArrayElem' pointer; its elements are borrowed and cannot be moved out`) — `safe_swap` or pass `T *_Owned _ArrayElem` |
+| *(BOR-021)* | lifetime may not live long enough | Assignment between (derefs of) borrow parameters when one is multi-level (`T *_Borrow *_Borrow`) — copy through a local value or restructure; see `bsc-borrowing` §9 |
+| *(out of scope)* | function return type cannot contain multiple borrow regions | Return types may not be multi-level borrows; return the inner `T *_Borrow` instead |
 
 ### Safe Zone (BSC-E03xx)
 
@@ -106,8 +109,12 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 | E0403 | Cannot return possibly-null status pointer 'p' as a '_Nonnull' pointer | Add null check or change return type to `_Nullable` |
 | E0406 | Cannot assign possibly-null status pointer 'p' to a '_Nonnull' pointer | Guard with null check before assignment |
 | E0407 | _Nonnull pointer must be initialized | Initialize at declaration |
-| *(NULLABLE-006)* | __assume_null requires a _Nullable pointer argument | Pass a `_Nullable` pointer; `_Nonnull`/plain `_Owned`/non-pointer are rejected |
-| *(NULLABLE-007)* | unsupported __assume_null argument | Use a variable or struct field; bind `*q`/`arr[0]`/casts to a local first |
+| *(NULLABLE-006)* | __assume_null requires a _Nullable pointer argument | Pass a `_Nullable` pointer; `_Nonnull`/plain `_Owned`/`_Borrow` are rejected |
+| *(NULLABLE-007)* | __assume_null requires a trackable expression as argument | Variable, field access, or deref chain only (parens/implicit casts ok); bind comma/ternary/explicit-cast/`arr[0]` values to a local first |
+| *(NULLABLE-008)* | __assume_null requires an argument of pointer or struct type | Non-pointer, non-struct argument (e.g. `int x`) |
+| *(NULLABLE-009)* | __assume_null is invalid because the struct contains a _Nonnull field | Struct form can't assume a `_Nonnull` field null — call `__assume_null(s->field)` per `_Nullable` field (note attached) |
+| *(NULLABLE-W001)* | warning: __assume_null has no effect on array field 'f' containing a _Nullable pointer | Array fields aren't covered by the struct form; handle them separately (`-Wbsc-assume-null`) |
+| *(NULLABLE-W002)* | warning: __assume_null has no effect: the struct does not contain any _Nullable pointer field | The call is a no-op; remove it (`-Wbsc-assume-null`) |
 
 > **2026-08 diagnostic rework**: BSC error messages were reworded to state the
 > violated rule and name the operands, quoting names LLVM-style (`'x'`, not
@@ -117,12 +124,25 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 > (`err_ownership_array_elem_transfer_forbidden`, `..._path_inconsistent`,
 > `..._assign_owned`) — see `bsc-ownership` §9.
 
-> **New in 2026-08**: two analyzer-hint builtins, both `_Unsafe`-only and both
-> rejecting any argument that is not a variable or struct field access —
-> `__assume_null` and `__forget`. These have no `BSC-Exxxx` code assigned yet;
-> the rows above cite the upstream catalog ids. Calling either in a safe zone reports
-> `<name> is forbidden in the safe zone` (E0301). See `bsc-nullability` §9 and
-> `bsc-ownership` §5.
+> **New in 2026-08**: two analyzer-hint builtins, both `_Unsafe`-only —
+> `__assume_null` and `__forget`. `__forget` takes a variable or struct field
+> access; since 2026-09 `__assume_null` takes any *trackable* expression
+> (including deref chains and whole structs). These have no `BSC-Exxxx` code
+> assigned yet; the rows above cite the upstream catalog ids. Calling either
+> in a safe zone reports `<name> is forbidden in the safe zone` (E0301). See
+> `bsc-nullability` §9 and `bsc-ownership` §5.
+
+> **Upstream catalog is now generated** (2026-09). The compiler repo no longer
+> keeps `clang/docs/BSC/bsc-errors.md` in the source tree; it is produced from
+> the `BSCDiag<"FEATURE", N>` metadata on each diagnostic in
+> `clang/include/clang/Basic/BSC/*.td` by `ninja bsc-errors-md`, landing at
+> `<build>/tools/clang/docs/BSC/bsc-errors.md` (130 errors, 3 warnings, 31
+> notes at the 2026-09 tip). The generator rejects duplicate codes, so the
+> earlier OWN-047 double assignment is gone: `err_ownership_array_elem_transfer_forbidden`
+> is now **OWN-052** (OWN-047 stays `err_owned_member_access_in_return`).
+> Diagnostics marked `BSCOutOfScope` (traits, async, generics, constexpr,
+> operator overload, member functions, and a few others such as the multi-level
+> return-type error) carry no code.
 
 > For detailed per-category documentation, see the `errors/` directory.
 > For common fixes, see `bsc-common-mistakes` Skill.

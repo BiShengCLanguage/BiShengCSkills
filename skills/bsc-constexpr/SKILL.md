@@ -148,20 +148,24 @@ constexpr bool is_same<T1, T2>();
 constexpr bool is_convertible<From, To>();
 ```
 
-### 4.4 Conditional Type Alias
+### 4.4 Conditional Types
 
-Requires `#include <bsc_conditional.hbs>`.
+`__conditional(C, T, F)` is a built-in type expression (no header): `T` if the
+integer constant expression `C` is non-zero, else `F`. Only the selected branch
+is instantiated/checked. `conditional<C, T, F>` from `bsc_conditional.hbs`
+wraps it as a generic alias but instantiates **both** branches.
 
 ```c
 #include <bsc_conditional.hbs>
-typedef conditional<int C, T, F> = __conditional(int C, T, F);
+// typedef conditional<int C, T, F> = __conditional(C, T, F);
 
-// When C is non-zero → resolves to type T; when C is zero → resolves to type F
+__conditional(1, int, double) a = 1;   // int, no header needed
 conditional<1, int, float> x = 42;     // x is int
 conditional<0, int, float> y = 3.14;   // y is float
 ```
 
-C must be a compile-time evaluable constant expression.
+`C` must be a compile-time evaluable constant expression. Details and the
+instantiation difference: `bsc-generic` §6.
 
 ## 5. Complete Example
 

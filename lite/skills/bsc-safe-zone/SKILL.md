@@ -37,11 +37,12 @@ _Safe void g(const int *_Borrow b) {
 }
 ```
 
-**Use `nullptr`, not `NULL`:**
+**Null pointer constants are allowed** (`NULL` too, since 2026-09):
 ```c
 _Safe void f(void) {
-    int *_Owned _Nullable p = NULL;       // ERROR
     int *_Owned _Nullable p = nullptr;    // OK
+    int *_Owned _Nullable q = NULL;       // OK (rejected before 2026-09)
+    int *_Owned r = NULL;                 // ERROR: _Owned is _Nonnull by default
 }
 ```
 
@@ -134,11 +135,11 @@ Not legitimate uses:
 
 ## 8. Common Mistakes
 
-**Forgetting `nullptr`:**
+**Null into a `_Nonnull` pointer** (`NULL` itself is fine since 2026-09):
 ```c
 _Safe void f(void) {
-    int *_Owned _Nullable p = NULL;       // ERROR
-    int *_Owned _Nullable p = nullptr;    // OK
+    int *_Owned p = NULL;                 // ERROR: _Owned is _Nonnull by default
+    int *_Owned _Nullable q = nullptr;    // OK
 }
 ```
 

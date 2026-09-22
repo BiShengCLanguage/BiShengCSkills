@@ -42,11 +42,13 @@ Don't use `_Nullable` "just in case" — it forces every caller to null-check. D
 
 ## 4. Null Literal
 
-Use `nullptr`, not `NULL`, in BSC code. `NULL` is forbidden in `_Safe` zones.
+Prefer `nullptr` in BSC code. Since 2026-09 `NULL` (and any null pointer
+constant) is accepted everywhere `nullptr` is, including `_Safe` zones.
 
 ```c
 int *_Owned _Nullable p = nullptr;    // OK
-int *_Owned _Nullable p = NULL;       // ERROR in _Safe
+int *_Owned _Nullable q = NULL;       // OK too (was an error in _Safe before 2026-09)
+int *_Owned r = NULL;                 // ERROR: _Owned is _Nonnull by default
 ```
 
 ## 5. Null-Checking Pattern
@@ -122,12 +124,6 @@ Cast based on the source's type. If the source is `_Nullable`, the cast must pre
 **Assigning null to non-null `_Owned`:**
 ```c
 int *_Owned p = nullptr;                 // ERROR
-int *_Owned _Nullable p = nullptr;       // OK
-```
-
-**Using `NULL`:**
-```c
-int *_Owned _Nullable p = NULL;          // ERROR in _Safe
 int *_Owned _Nullable p = nullptr;       // OK
 ```
 

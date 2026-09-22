@@ -140,6 +140,26 @@ For one element, swap it out instead: `safe_swap(&_Mut a[0], &_Mut tmp);`.
 Every path through the loop body must leave `a[i]` in the same ownership state
 (null-check skips are fine — null counts as not owning). See `bsc-ownership` §9.
 
+### 2.6 Transferring ownership out of an array parameter
+
+Since 2026-09 an array parameter whose element type is/contains `_Owned` or
+`_Borrow` is adjusted to a `_Borrow _ArrayElem` pointer, not a raw pointer, so
+its elements are borrowed inside the callee:
+
+```c
+_Safe void f2(int *_Owned a[10]) {
+    safe_free((void *_Owned)a[0]);
+    // error: cannot take ownership of a borrowed value
+    // note: array parameter 'a' is adjusted to a '_Borrow _ArrayElem' pointer;
+    //       its elements are borrowed and cannot be moved out
+}
+```
+
+The caller keeps ownership (passing `int *_Owned arr[2]` decays to the borrow
+and the caller must still free the elements). To consume elements in the
+callee, take a `T *_Owned _ArrayElem` heap array or `safe_swap` them out
+through the borrow. See `bsc-borrowing` §12.2.
+
 ## 3. Borrowing Mistakes
 
 ### 3.1 Mutable borrow while immutable borrow active
@@ -674,7 +694,10 @@ These five features are gated behind `-fbsc-experimental`; add the flag to the c
 | `_Await` in expr | Assign to variable first |
 | Multiple `_Await` in args | Pre-evaluate one: `int a = _Await g(); f(a, _Await h());` |
 | `_Owned _Borrow` | Illegal — pick one |
-| Borrow of borrow | `T *_Borrow *_Borrow` — restriction (pick single level) |
+| Borrow of borrow | Allowed since 2026-09 (`bsc-borrowing` §13); but a return type can't be multi-level (`function return type cannot contain multiple borrow regions`) and multi-level params can't be cross-assigned (`lifetime may not live long enough`) |
+| `NULL` in BSC / safe code | Accepted since 2026-09 as a null pointer constant, same as `nullptr`; only `_Nonnull` (incl. default-`_Nonnull` `_Owned`/`_Borrow`) targets reject it |
+| Moving out of an array **parameter** | `void f(T *_Owned a[N])` is really `T *_Owned *_Borrow _ArrayElem a`: elements are borrowed (`cannot take ownership of a borrowed value`). Use `safe_swap`, or pass `T *_Owned _ArrayElem` |
+| Freeing a flexible array member in a loop | Never a qualified for-loop (no length in the type) — `safe_swap` or `_Unsafe` |
 | `_Owned` without `_Nullable` | Add `_Nullable` if pointer can be null |
 | Deref nullable | Null-check first: `if (p != nullptr) { *p = ... }` |
 | Array init by element | Use init list `{1,2,3}` or `__assume_initialized` |

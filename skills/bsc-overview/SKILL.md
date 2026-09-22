@@ -39,7 +39,7 @@ These work inside `_Safe` code and are covered by the initialization analysis
 | Traits ⚠️ | `_Trait`, `_Impl`, `This*` | Interface abstraction with vtable dynamic dispatch |
 | Operator overloading ⚠️ | `__attribute__((operator OP))` | Overload operators for user-defined types |
 | Ownership | `_Owned`, `_ArrayElem`, `_Nullable`, `_Nonnull`, `_Public`, `__forget` | Move semantics, RAII destructors, compile-time memory safety (`_Owned struct` itself is ⚠️) |
-| Borrowing | `_Borrow`, `_ArrayElem`, `&_Const`, `&_Mut` | Non-owning references with lifetime enforcement |
+| Borrowing | `_Borrow`, `_ArrayElem`, `&_Const`, `&_Mut` | Non-owning references with lifetime enforcement; multi-level borrows (`T *_Borrow *_Borrow`) since 2026-09 |
 | Nullability | `_Nullable`, `_Nonnull`, `nullptr`, `__assume_null` | Compile-time null-safety checking |
 | Safe zones | `_Safe`, `_Unsafe` | Compiler-enforced memory safety regions |
 | Initialization analysis | `__attribute__((ensure_init))`, `__attribute__((ensure_init_if_ret))`, `__assume_initialized` | Field-level uninitialized variable detection |
@@ -60,7 +60,7 @@ These work inside `_Safe` code and are covered by the initialization analysis
 | Generic struct | `struct S<T> { T field; };` |
 | Constant generic | `struct A<T, int N> { T data[N]; };` |
 | Type alias (generic) | `typedef Alias<T> = OldType<T>;` |
-| Conditional type alias | `conditional<C, T, F>` (from `bsc_conditional.hbs`) |
+| Conditional type | `__conditional(C, T, F)` (builtin; only the chosen branch is instantiated) or `conditional<C, T, F>` (from `bsc_conditional.hbs`) |
 | Trait definition | `_Trait Name { RetType method(This* this); };` |
 | Trait impl | `_Impl _Trait Name for TypeName;` |
 | Trait pointer | `_Trait Name* ptr = &value;` |
@@ -69,9 +69,11 @@ These work inside `_Safe` code and are covered by the initialization analysis
 | Owned struct | `_Owned struct S { _Public: ...; ~S(S this) {...} };` (must be at file scope) |
 | Owned array pointer | `T *_Owned _ArrayElem` — `_Owned` pointer that supports `[]` (see `bsc-ownership`) |
 | Immutable borrow | `const T *_Borrow ref = &_Const value;` (**not** `_Borrow T*`) |
+| Array param with owned elements | `void f(T *_Owned a[N])` ≡ `void f(T *_Owned *_Borrow _ArrayElem a)` — elements are borrowed |
 | Mutable borrow | `T *_Borrow ref = &_Mut value;` |
 | Borrow into array | `T *_Borrow _ArrayElem p = &_Mut arr[i];` — supports `[]`, `+`, `-`, `++`, `--` |
-| Nullable pointer | `T *_Owned _Nullable p = nullptr;` |
+| Nullable pointer | `T *_Owned _Nullable p = nullptr;` (`NULL` also accepted since 2026-09) |
+| Borrow of a borrow | `int *_Borrow *_Borrow q = &_Mut p;` (see `bsc-borrowing` §13) |
 | Nonnull pointer | `T *_Nonnull p = &value;` |
 | Safe function | `_Safe RetType func(ParamType param) { ... }` |
 | Unsafe block | `_Unsafe { ... }` |

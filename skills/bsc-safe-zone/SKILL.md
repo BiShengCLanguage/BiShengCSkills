@@ -75,7 +75,7 @@ In `_Safe` zones:
 - **No raw pointer dereference** (`*rawptr`, `rawptr->field`) — `_Owned` and `_Borrow` pointer dereference is OK
 - **No pointer category casts** — no casting between `_Owned`/`_Borrow`/raw pointers, no pointer-to-integer or integer-to-pointer casts. Exception: `T *_Owned` can be explicitly cast to `void *_Owned`.
 - **No casts between pointers of different pointed-to types** — with these same-category exceptions (all in the matrix below): owned/borrow pointers to `void`-pointee targets, and (since 2026-08) raw `T *` to `void *`, `const T *`, or `const void *` (the `void` targets require `T` `is_trivial_data`; implicit and explicit behave the same). The reverse raw casts (`void *`→`T *`, dropping `const`) stay forbidden in safe zones
-- **`nullptr` required** — `NULL` is forbidden in safe zones; use `nullptr` to initialize or compare pointers
+- **Null pointer constants are fine** — since 2026-09 `NULL` (`((void *)0)`), `0` and any other null pointer constant are accepted in safe zones wherever `nullptr` is: initializing/assigning `_Owned _Nullable`, `_Borrow _Nullable` and raw pointers, and comparisons `p == NULL` (which narrow like `nullptr`). Before that, only the `nullptr` literal was allowed here. `_Nonnull` targets (including default-`_Nonnull` `_Owned`/`_Borrow`) still reject any null constant
 
 #### Pointer conversion matrix
 
@@ -85,8 +85,10 @@ In `_Safe` zones:
 | `T *_Borrow` → `void *_Borrow` (T has pointer fields / is `_Owned struct`) | **Forbidden** (even with explicit cast) | OK (the trivial-data condition is safe-zone-only) |
 | `T *_Borrow` (mutable) → `const T *_Borrow` / `const void *_Borrow` | OK (**implicit only** — compiler inserts `&_Const *`; `const void` target needs trivial T; C-style cast forbidden) | OK (implicit only; `const void` always) |
 | `void *_Borrow` → `T *_Borrow` | **Forbidden** — explicit cast required, must be in `_Unsafe` | OK (explicit cast) |
+| `void *_Borrow` → `T *_Borrow _ArrayElem` | **Forbidden** (`conversion from type 'void *_Borrow' to 'int *_Borrow _ArrayElem' is forbidden in the safe zone`) | OK (explicit cast; since 2026-09 — the only way a non-`_ArrayElem` safe pointer becomes `_Borrow _ArrayElem`) |
 | `T *_Borrow _ArrayElem` → `T *_Borrow` | OK (implicit) | OK |
-| `T *_Borrow _ArrayElem` → `void *`/`const void *` `_Borrow [_ArrayElem]` | OK (implicit; trivial T; const targets not by explicit cast) | OK (implicit; always) |
+| `T *_Borrow _ArrayElem` → `void *`/`const void *` `_Borrow [_ArrayElem]` | OK (implicit; trivial T — else `note: source pointee type 'struct S' is not a trivial data type`; const targets not by explicit cast) | OK (implicit; always) |
+| `T *_Borrow _ArrayElem` (mutable) → `const T *_Borrow [_ArrayElem]` | OK (implicit reborrow) | OK |
 | `T *_Borrow _ArrayElem` → differently-typed `U *_Borrow _ArrayElem` | Forbidden | Forbidden (removed 2026-08; was allowed explicitly) |
 | `T *_Borrow` → `T *_Borrow _ArrayElem` | Forbidden | Forbidden |
 | `T *_Borrow` → raw `T *` | **Forbidden everywhere** | Forbidden everywhere |
@@ -261,7 +263,12 @@ assignment checking, ternary/pointer comparison operands, cross-TU tag types):
 - Function **parameters** are adjusted before comparison: arrays → pointers,
   function types → function pointers, top-level non-sticky qualifiers dropped,
   default nullability filled in. So `void f(int a[10])` ≡ `void f(int *a)` and
-  `void f(const int a)` ≡ `void f(int a)`.
+  `void f(const int a)` ≡ `void f(int a)`. **Exception** (2026-09): an array
+  parameter whose element type is, or contains, an `_Owned`/`_Borrow` pointer
+  adjusts to `T *_Borrow _ArrayElem` instead of a raw pointer —
+  `void f(int *_Owned a[10])` ≡ `void f(int *_Owned *_Borrow _ArrayElem a)`
+  and `void f(struct S a[20])` ≡ `void f(struct S *_Borrow _ArrayElem a)`
+  when `S` has an `_Owned` member (verified). See `bsc-borrowing` §12.2.
 - struct/union/enum compatibility follows C11 tag rules (same tag; if both
   complete: same members/order/bit-field widths/alignment/enum values).
   Different or anonymous tags are incompatible even with identical bodies.
@@ -274,6 +281,10 @@ assignment checking, ternary/pointer comparison operands, cross-TU tag types):
 - **Unsafe context**: the `_Safe` declaration is tried **first**; if the
   arguments don't match it, the call falls back to the `_Unsafe` declaration;
   if neither matches, error.
+- A **null pointer constant argument** (`NULL`, `(void *)0`, `0`, `nullptr`)
+  matches any pointer parameter during this selection (2026-09), so
+  `foo(NULL)` resolves against `_Safe void foo(const A *_Borrow _Nullable a);`
+  from either context.
 
 ```c
       void f1(int *p);

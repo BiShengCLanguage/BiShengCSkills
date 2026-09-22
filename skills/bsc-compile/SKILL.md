@@ -59,6 +59,32 @@ If no path is configured, ask the user. Then use the full path in all compile co
 
 **`-fbsc-experimental`**: member functions, `_Trait`, operator overloading, `_Owned struct`, and coroutines (`_Async`/`_Await`) are low-priority experimental features, rejected by default with `error: X is an experimental BSC feature; enable with -fbsc-experimental`. In practice the flag is needed for any code that includes libcbs container headers (`vec.hbs`, `string.hbs`, …, which use `_Owned struct` and member functions internally) or `future.hbs`. Plain `_Owned`/`_Borrow` pointers, `bishengc_safety.hbs` (`safe_malloc`/`safe_free`), `bsc_type_traits.hbs`, generics, and safe zones need no flag. The negative form `-fno-bsc-experimental` exists.
 
+### BSC-specific options at a glance (manual §5.3)
+
+| Option | Values | Effect |
+|--------|--------|--------|
+| `-fbsc-experimental` | flag (`-fno-bsc-experimental`) | Enable the ⚠️ features listed above; without it they are errors |
+| `-fbsc-diag=` | `default` \| `exhaustive` | Diagnostic mode, see below |
+| `-nullability-check=` | `safeonly` (default) \| `all` | Where `_Nullable`/`_Nonnull` checking runs (`bsc-nullability` §10) |
+| `-uninit-check=` | `safeonly` (default) \| `none` \| `all` | Where initialization analysis runs (`bsc-initialization` §6) |
+| `-rewrite-bsc` (+ `-line`) | flags | Source-to-source BSC → C; `-line` adds `#line` info (§4) |
+| `-Xclang -dump-bscir` | cc1 flag | Dump the BSCIR intermediate representation **instead of** running the BSC analyses — compiler-internal debugging only |
+
+**`-fbsc-diag=exhaustive`** changes how much the BSC analyses report:
+
+- `default`: analysis gating is per **translation unit** — once any non-BSC
+  error (ordinary Sema/type error) has occurred, later functions are not
+  analysed at all. A generic-instantiation error names only the **first**
+  call site of that specialization in a `note`.
+- `exhaustive`: analysis gating is per **function** — a function whose own
+  body produced an AST-invalidating error is skipped, but functions that are
+  clean are analysed even when earlier code in the TU had unrelated errors
+  (with a warning if the AST is unreliable). Generic-instantiation errors add
+  a `note` at **every** call site that uses the failing specialization.
+
+Use `exhaustive` when you want a full picture of BSC errors in one pass, or
+when hunting every caller that passes an invalid type argument.
+
 **`-x bsc` use cases**: incremental C→BSC migration without renaming every file; keeping the original `.c`/`.h` extensions for compatibility with external tooling. Only `.cbs`/`.hbs` are auto-detected as BSC — everything else needs the flag. Most editor/LSP tooling keys off `.cbs`/`.hbs`, so keeping `.c`/`.h` means you lose BSC-aware editor features.
 
 ## 3. Include Paths
