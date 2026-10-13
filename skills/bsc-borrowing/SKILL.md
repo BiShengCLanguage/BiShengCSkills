@@ -127,7 +127,7 @@ rather than *borrow variable*, because `*q`, `s.p` and the like are borrows too.
 - Cannot be global **or `static`** variables, nor union members
 - `_Owned` and `_Borrow` cannot coexist on same pointer: `int *_Owned _Borrow` is illegal
 - No indexing (`p[i]`) and no pointer arithmetic (`p + n`, `p++`) on **plain** borrow pointers. For an array-element borrow, use `_Borrow _ArrayElem` (see §12) — that variant supports `[]`, `+`, `-`, `+=`, `-=`, `++`, `--`
-- Cannot use `_Borrow` pointer type as a generic type argument
+- A `_Borrow` pointer type **may** be a generic type argument (`struct Box<int *_Borrow>`, `id<int *_Borrow>(p)`; the old ban was dropped from the manual in 2026-09 and the compiler accepts it)
 - No `_Trait` impl for borrow types; no member functions for borrow types
 - A struct that contains `_Borrow` members **may** be borrowed (since 2026-09; used to be an error)
 - Globals **and `static` variables**: in safe zones, only immutable borrows (`&_Const`) allowed; no mutable borrows (we can't track reads/writes of global/static storage across function signatures)
@@ -530,11 +530,18 @@ Rules on top of the usual ones (all verified against the 2026-09 compiler):
   `s.m` stays frozen until `s` goes out of scope — `s.m = 2` after the last use
   of `s.p` is still `cannot assign to 's.m' because it is borrowed`. Not a
   useful pattern; keep back-references raw (see `c-to-bsc`).
-- **Not enforced at this tip**: the manual's rule that an inner borrow reached
-  only through immutable borrows is itself immutable (`int *_Borrow const
-  *_Borrow q = &_Const p; **q = 2;` should be an error). The 2026-09 compiler
-  accepts that write in every zone and diag mode — do not rely on the rule in
-  either direction.
+- **Enforced since 2026-09-23** (BOR-022): anything reached *through* an
+  immutable borrow is read-only, even if the inner pointer is itself a mutable
+  borrow. With `int *_Borrow p = &_Mut x; int *_Borrow const *_Borrow q =
+  &_Const p;`:
+  - `**q = 2` / `(**q)++` → `error: expression is not assignable because it is behind an immutable borrow`
+  - `&_Mut **q` → `error: expression cannot be mutably borrowed because it is behind an immutable borrow`
+  - `int *_Borrow m = *q;` → `error: expression cannot be mutably reborrowed because it is behind an immutable borrow`
+  Same through a struct: `const struct W *_Borrow cw = &_Const w; *cw->p = 3`
+  errors even though `w.p` is `int *_Borrow`. Reads (`int y = **q`) and
+  `&_Const **q` are fine. The propagation stops at a **raw pointer** boundary:
+  `*cw->raw = 7` with `int *raw` compiles. Applies in every zone (sema check,
+  not the borrow checker).
 
 > For ownership (owning pointers), see `bsc-ownership` Skill
 > For safe zones that require borrows, see `bsc-safe-zone` Skill

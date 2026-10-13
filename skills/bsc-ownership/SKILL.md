@@ -139,9 +139,10 @@ Note: the deref and nullable→nonnull restrictions are enforced by the **nullab
 
 ### `__forget` — explicitly drop ownership
 
-`__forget(p)` is a builtin that flips an `_Owned` pointer's state to **Moved**.
-Like `__assume_null`, it is a **pure analyzer hint** — no verification, no
-generated code; you promise `p` will never be freed or moved again.
+`__forget(e)` is a builtin that makes the analyzer treat the `_Owned` pointer
+`e` as **no longer owning** (Moved). Like `__assume_null`, it is a **pure
+analyzer hint** — no verification, no generated code; you promise the value
+will never be freed or moved again.
 
 **`_Unsafe`-only**:
 
@@ -177,13 +178,30 @@ void reassign(void) {
 Works on `_Owned` struct fields (`s.p`, `s->p`, `(*s).p`) — that field is then
 exempt from the field-leak check — and on `_Owned _Nullable` pointers.
 
-**Argument rules**:
-- Must be an `_Owned` pointer. A `_Borrow`, a raw pointer, or a non-pointer is
-  `error: __forget requires an _Owned pointer argument`
-- Must be a **variable or struct field access**, optionally in parens or
-  implicit casts. `arr[0]`, `*q`, casts, ternaries, and comma expressions give
-  `error: unsupported __forget argument` plus
-  `note: the argument must be a variable or struct field access`
+**Argument rules** (extended 2026-09-21, all verified):
+- Must be a **trackable expression**: a variable, a struct field access, an
+  array element, a pointer dereference, or chains of those (`(*s).p`, `s->in.p`,
+  `arr[i]`), optionally in parens / implicit casts. A comma expression, a
+  ternary, or an **explicit cast** `(int *_Owned)p` is
+  `error: __forget requires a trackable expression as argument` (OWN-051).
+- Its type must be an **`_Owned` pointer or a struct that (recursively)
+  contains an `_Owned` pointer field**. A `_Borrow`, raw or `_Nonnull` pointer,
+  a non-pointer, or a struct without owned fields is
+  `error: __forget requires an _Owned pointer or a struct containing ownership` (OWN-050).
+- **Struct form**: `__forget(t)` forgets *every* `_Owned` field of `t`,
+  recursively through embedded structs (`t.in.p` and `t.q` together); no leak
+  at scope exit, and a later `sink(t.q)` is `use of moved value: 't.q'`.
+- **Array elements** follow the array-transfer rule (§9): `__forget(arr[i])`
+  is allowed only inside a qualifying full-range `for` loop. Outside one,
+  `__forget(arr[0])` is `error: cannot transfer ownership of array element
+  `arr` outside a qualifying for-loop; use a full-range for-loop or safe_swap`
+  (and the array then leaks).
+- **Not through a borrow**: with `int *_Owned *_Borrow q = &_Mut p`,
+  `__forget(*q)` (or `__forget(w->p)` for `struct W *_Borrow w`) is
+  `error: cannot take ownership of a borrowed value` (BOR-014). Dereferencing
+  an **`_Owned` pointer** is fine (`__forget(*s)`, `__forget((*s).p)` for
+  `struct S *_Owned s`). Through a **raw** pointer (`__forget(r->p)`, `struct
+  S *r`) the call compiles with no diagnostic.
 
 > **`__forget(p)` vs `forget<T>(t)`**: different tools with similar names.
 > `forget<T>` is a `_Safe` **library function** (`bishengc_safety.hbs`) that
@@ -197,6 +215,7 @@ exempt from the field-leak check — and on `_Owned _Nullable` pointers.
 ### Logical and conditional operators
 - Logical operators (`!`, `&&`, `||`) work on `_Owned` pointers (null checks, no ownership consumed)
 - `_Owned` pointers can be conditions in `if`/`while`/`do-while`/`for`/ternary, but **NOT** `switch`
+- A condition is a **read**: after `sink(p)`, `if (p)` or `while (p)` is `error: use of moved value: 'p'` (diagnosed since 2026-09; statement conditions were previously skipped)
 - Implicit `_Owned` -> `_Bool` conversion is allowed (does not consume ownership)
 - An `_Owned` pointer may appear in a **comma expression** (`(a, p)`). Whether the comma expression consumes ownership depends on where the result is used: as an `if`/`while` condition it does **not** consume; as an initializer, assignment RHS, or call argument it **does** move ownership (e.g. `int *_Owned q = (++a, p);` moves `p` into `q`)
 

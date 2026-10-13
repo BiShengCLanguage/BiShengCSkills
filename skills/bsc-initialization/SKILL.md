@@ -80,7 +80,7 @@ _Safe void example(int cond) {
 
 ### Rule 4: Address-of is a use
 
-Taking `&`, `&_Mut`, or `&_Const` of an uninitialized variable is an error. Exception: `ensure_init` parameters and `__assume_initialized` arguments.
+Taking `&`, `&_Mut`, or `&_Const` of an uninitialized variable is an error. Exception: `ensure_init` / `ensure_init_if_ret` arguments and `__assume_initialized` arguments.
 
 ```c
 _Safe void example(void) {
@@ -212,6 +212,25 @@ _Safe void example(void) {
 }
 ```
 
+### Rule 10: Parameters are initialized at entry, including all sub-objects
+
+```c
+struct Pair { int a; int b; };
+_Safe int rule10(struct Pair s) { return s.a + s.b; }  // ok: caller passed an initialized value
+```
+
+### Rule 11: Compound assignment and `++`/`--` are uses, not initializations
+
+They read the object before writing it back:
+
+```c
+_Safe void rule11(void) {
+    int x;
+    x += 1;   // error: use of uninitialized value: 'x'
+    x++;      // same error
+}
+```
+
 ### Expression coverage (GNU extensions, `sizeof`)
 
 Since 2026-08 the analysis descends into constructs it previously skipped —
@@ -269,6 +288,20 @@ _Safe void example(void) {
 ```
 
 ### Safe zone usage
+
+**Pointee must be concrete** (2026-09, INIT-033): the parameter cannot point to
+`void` (`error: 'ensure_init' attribute only applies to pointer parameters to a
+non-void type`), and in a function **definition** the pointee must be a
+complete type — a declaration may still name a forward-declared struct:
+
+```c
+struct Handle;
+void handle_init(struct Handle *__attribute__((ensure_init)) h);   // ok: declaration only
+void wrap(struct Handle *__attribute__((ensure_init)) h) {         // error: __attribute__((ensure_init)) parameter 'h'
+    handle_init(h);                                                //        points to incomplete type 'struct Handle' in a function definition
+}
+void fill(void *__attribute__((ensure_init)) buf);                 // error: pointer to void
+```
 
 ```c
 _Safe void init_safe(int *_Borrow __attribute__((ensure_init)) out);
@@ -417,10 +450,16 @@ initializes it).
 ### Declaration rules
 
 - **Parameters only** — not globals or locals.
-- The parameter must be a **raw pointer or mutable borrow to a non-`const` type**
-  (`int *`, `int *_Borrow`; not `const int *_Borrow`).
+- The parameter must be a **raw pointer or mutable borrow to a non-`const`,
+  non-`void` type** (`int *`, `int *_Borrow`; not `const int *_Borrow`, not
+  `void *`). In a function **definition** the pointee must be complete (same
+  INIT-033 rule as `ensure_init`; a declaration may use a forward-declared struct).
 - The function's **return type must be an integer type or `_Bool`**.
-- `arg` must be an **integer literal** (may be negative; not a float or char).
+- `arg` must be an **integer literal** (may be negative; not a float or char)
+  **representable in the return type** (INIT-034, 2026-09): `_Bool f(...
+  ensure_init_if_ret(2))` is `error: __attribute__((ensure_init_if_ret))
+  argument 2 is not representable in return type '_Bool', so no return can
+  ever satisfy the contract; use a value of 0 or 1`; `char` with `128` likewise.
 - **Mutually exclusive with `ensure_init`** on the same parameter.
 
 ### Redeclaration & function-pointer compatibility
@@ -456,10 +495,28 @@ _Safe void bad(void) {
 ```
 
 The return-value check may be written `e == v`, `e != v`, `v == e`, or `v != e`
-(`v` an integer/`_Bool` literal). `e` may be the call itself, or a variable that
-was assigned the call's result directly and not address-taken / re-borrowed /
-reassigned in between. (Sub-comparisons buried inside `&&`/`||` are **not**
-recognized as the check.)
+(`v` an integer constant expression). `e` may be the call itself, or a variable
+that was assigned the call's result directly and not address-taken / re-borrowed
+/ reassigned in between. (Sub-comparisons buried inside `&&`/`||` are **not**
+recognized as the check.) Rules tightened 2026-09-30 (all verified):
+
+- **Truth tests are not checks**: `if (!res)`, `if (res)`, `if (!(res != 0))`
+  only separate 0 from non-0, so `a` stays uninitialized inside them. Write
+  the compared value out: `if (res == 0)`.
+- **A guard stored in a variable is not a check**: `_Bool ok = r == 0; if (ok)`
+  loses the association.
+- **Integer conversions on the way into the variable** keep the association
+  only if they don't lose values: widening or same-width sign change
+  (`unsigned u = (unsigned)neg(&_Mut a); if (u == 4294967295u)` for
+  `ensure_init_if_ret(-1)` is ok; `long l = ...; if (l == -1)` ok). A
+  **narrowing** cast (`unsigned char c = ...; if (c == 255)`) or a cast to
+  `_Bool` maps several return values onto one, so the association is dropped.
+  `v` and `arg` are compared in the variable's type.
+- **Joins**: after an `if`/`?:`/loop, `r` stays associated only if **every**
+  incoming path assigned it from the call. `int r = c ? bar(&_Mut a) : -1;
+  if (r == 0) { int b = a; }` is an error; so is `r = bar(...)` inside a
+  `for` that may run 0 times. `if (c) r = bar(&_Mut a); else r = bar(&_Mut a);`
+  is fine. Put the check on the same path as the call when in doubt.
 
 ### Callee side
 
@@ -474,6 +531,28 @@ _Safe unsigned int ok(int a, S *_Borrow __attribute__((ensure_init_if_ret(0))) p
     p->a = 1; p->b = 2;
     return 0;                   // return-0 path: fully initialized
 }
+```
+
+**Returning a conditional** is checked per arm (2026-09): `return c ? x : y;`
+behaves like `if (c) return x; else return y;`. **Forwarding** another contract
+call's result is allowed when both `arg`s match — the callee's contract covers
+that path. Storing the value in a non-constant local first drops both.
+
+```c
+_Safe int inner(int *_Borrow __attribute__((ensure_init_if_ret(0))) p);
+_Safe int f1(int c, int *_Borrow __attribute__((ensure_init_if_ret(0))) p) {
+    return c ? inner(p) : -1;   // ok: -1 arm never equals arg; inner arm is forwarded
+}
+_Safe int f2(int c, int *_Borrow __attribute__((ensure_init_if_ret(0))) p) {
+    return c ? inner(p) : 0;    // error: '*p' not initialized at return in __attribute__((ensure_init_if_ret(0))) function
+}
+_Safe int f3(int c, int *_Borrow __attribute__((ensure_init_if_ret(0))) p) {
+    int r = c ? inner(p) : -1;
+    return r;                   // error: cannot verify ... contract for '*p': return value is not an integer constant
+}
+_Safe int g3(int *_Borrow __attribute__((ensure_init_if_ret(0))) p) { int r = inner(p); return r; }  // ok: r still associated
+_Safe unsigned g1(int *_Borrow __attribute__((ensure_init_if_ret(0))) p) { return (unsigned)inner(p); }  // ok: no values lost
+_Safe short g2(int *_Borrow __attribute__((ensure_init_if_ret(0))) p) { return (short)inner(p); }        // error: narrowing drops the association
 ```
 
 ### Known limitations (conservative false errors)
@@ -520,6 +599,12 @@ The address-of operand must be one of:
 When all fields of `*p` are marked through `&p->...`, `*p` is automatically
 promoted to fully initialized.
 
+A **written cast** anywhere in the path is rejected (2026-09):
+`__assume_initialized(&*(struct S *)out)` is `error: unsupported
+__assume_initialized argument` + `note: the argument must be '&' applied to a
+variable, struct field access, or pointer dereference`. Only implicit casts are
+looked through.
+
 ```c
 struct Pair { int a; int b; };
 void assume_through_ptr(struct Pair *__attribute__((ensure_init)) out) {
@@ -563,7 +648,7 @@ _Safe void example(int cond) {
 | Mode | Behavior |
 |------|----------|
 | `none` | Disable initialization analysis |
-| `safeonly` (default) | Check in `_Safe` zones only; `ensure_init` contract verification always active |
+| `safeonly` (default) | Check ordinary variables in `_Safe` zones only; init contracts (`ensure_init` / `ensure_init_if_ret`) are checked regardless of zone |
 | `all` | Check in all code (including non-safe) |
 
 Note: `ensure_init` contract verification is active whenever mode is not `none`, even outside safe zones.

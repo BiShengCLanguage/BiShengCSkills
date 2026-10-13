@@ -15,16 +15,20 @@ _Static_assert(SIZE == 1024, "wrong");
 ```
 
 - Must be initialized at definition
-- **Compile-time computable types**: `bool`, `char` (signed/unsigned char), integer types (`int` and variants with `short`/`signed`/`unsigned`/`long`/`long long`), and aliases of these. Excludes enum types, float/double
+- **Compile-time computable types**: `bool`, `char` (signed/unsigned char), integer types (`int` and variants with `short`/`signed`/`unsigned`/`long`/`long long`), and aliases of these. Excludes enum types, float/double, **and all pointer types** — `constexpr int *ptr = &g;` and `constexpr int (*fp)(void) = foo;` are `error: BSC constexpr variable does not support type 'int *const'` (the old "pointer to global/static" allowance is gone, 2026-09)
 - Cannot be modified after definition
-- Initializer must be a constant expression (literal, other constexpr, constexpr function call)
-- constexpr pointers can only point to global or static variables
+- Otherwise behaves like a `const` variable of the same scope (storage duration, linkage)
+- Initializer must be a constant expression: literals, other constexpr, `sizeof`/`_Alignof`, constexpr function calls with constant arguments, the arithmetic/logical/bitwise/shift/`?:` operators over those, and **casts** between arithmetic types (`(int)1.9` → 1, `(float)1` ok). A cast that involves a pointer (`(int)(long)&a`) is not a constant (`note: cast that performs the conversions of a reinterpret_cast is not allowed in a constant expression`)
+- **Undefined behaviour during evaluation disqualifies it** (`error: constexpr variable 'x' must be initialized by a constant expression` + a note): `1 / 0`, `1 % 0`, signed overflow `2147483647 + 1`, `1 << 40` (shift ≥ width), `1 << -1`, out-of-bounds `"ab"[5]`, float `1.0 / 0.0`. Only evaluated operands count: `0 && (1 / 0)` and `0 ? (1 / 0) : 5` are fine (a `-Wdivision-by-zero` warning still prints)
 
 ### Contexts where constexpr values can be used
+Anywhere BSC requires an integer constant expression:
 1. `_Static_assert` first parameter
 2. Fixed-length array size: `int arr[CONSTEXPR_VAL]`
 3. Initialize other constexpr constants
 4. Constant generic parameters: `Array<int, CONSTEXPR_VAL>`
+5. Initializers of global / `static` variables
+6. `case` labels, enumerator values, bit-field widths, `_Alignas(N)`
 
 ## 2. constexpr Functions
 
@@ -41,13 +45,24 @@ int runtime_result = factorial(x);    // also works at runtime
 **Rules:**
 - Params and return: compile-time computable types only (no void return)
 - Body: no static vars, no non-constexpr calls, no external non-constexpr vars, no asm
+- **Locals are allowed but read-only**: compile-time computable types only, and
+  no assignment / `++` after the declaration — `int s = 0; s = 1;` makes the
+  whole function `error: constexpr function never produces a constant
+  expression` (`note: subexpression not valid in a constant expression`).
+  `int s = n + 1; return s * 2;` is fine
+- **Control flow**: `if`, `if constexpr`, `switch` and recursion are supported
+  (`fib(n-1) + fib(n-2)` works, `_Static_assert(fib(10) == 55, "")`). `for`,
+  `while`, `do-while` are `error: statement not allowed in constexpr function`;
+  `goto` is rejected too (`never produces a constant expression`)
 - **Declaration and definition must both have `constexpr`, or neither** — mismatch is an error
 - Function parameters cannot use constexpr: `int foo(constexpr int a)` is an error
 - Cannot be `_Async` functions
 - Cannot be variadic functions
 - Can modify constexpr generic functions: `constexpr int f<T>() { ... }`
 - Can modify static member functions: `constexpr int int::foo() { ... }`
-- Cannot modify instance member functions (`this` pointer is not a compile-time computable type)
+- Can modify **instance** member functions only with a by-value receiver of a
+  compile-time type: `constexpr int int::foo(This this) { return this + 1; }`.
+  `This *this` is `error: BSC constexpr function does not support type 'int *'`
 
 ## 3. constexpr if
 
@@ -74,7 +89,8 @@ void process<T>(T value) {
 
 **Discarded (false) branch rules:**
 - In **generic context**: discarded branch is not instantiated — no post-instantiation semantic checking occurs (allows type-dependent code that would be invalid for some T)
-- In **non-generic context**: discarded branch **is** fully type-checked — it is only dead-code-eliminated, not skipped for semantic analysis
+- In **non-generic context**: discarded branch **is** fully type-checked, **including safe-zone rules** (`*p` on a raw pointer inside a discarded branch of a `_Safe` function is still `'*' operator is forbidden in the safe zone`). The memory-safety analyses (ownership, borrow, nullability, init) do **not** run on it: a double `safe_free(p)` or a read of an uninitialized local in a discarded branch is silent, while the same code in the taken branch is `use of moved value`. The source-to-source rewriter drops discarded statements
+- **`goto` into a branch** is forbidden: a label inside an `if constexpr` branch may only be targeted from inside that same branch — `cannot jump from this goto statement to its label` + `note: jump enters controlled statement of constexpr if`. Jumping *out* of a branch to a label after the `if constexpr` is fine. Checked at the generic definition too, regardless of which branch an instantiation would keep
 
 ## 4. Type Traits
 

@@ -281,10 +281,29 @@ A *new* null check after the assumption narrows it again as usual.
   non-struct such as `int x` is
   `error: __assume_null requires an argument of pointer or struct type`.
 
+**Not through a borrow when ownership is involved** (2026-09): if the
+expression's type is `_Owned _Nullable`, or a struct containing an
+`_Owned _Nullable` field, and the path goes through a `_Borrow` dereference,
+the call is `error: cannot take ownership of a borrowed value`:
+
+```c
+void foo(int *_Owned _Nullable p) {
+    int *_Owned _Nullable *_Borrow q = &_Mut p;
+    _Unsafe { __assume_null(*q); }   // error: cannot take ownership of a borrowed value
+}
+struct S2 { int *_Nullable p1; int *_Owned _Nullable p2; };
+void bar(struct S2 *_Borrow s) { _Unsafe { __assume_null(*s); } }  // same error (s->p2 is owned)
+```
+
+A borrow-deref path to a **non-owned** `_Nullable` (`int *_Nullable *_Borrow q;
+__assume_null(*q)`, or a struct whose nullable fields are all non-owned) is
+accepted.
+
 **Struct form** — `__assume_null(*s)` / `__assume_null(s)` asserts, for every
 `_Nullable` pointer field of the struct (recursively through embedded structs),
 that it is null, and for every `_Owned _Nullable` field that it holds no
-ownership. Nothing else changes: a later `*(s->p1) = 1` is
+ownership. Mixed structs are fine (`struct S { int *_Nullable p1; int *_Owned
+_Nullable p2; }` — `p1` assumed null, `p2` assumed null and unowned). Nothing else changes: a later `*(s->p1) = 1` is
 `error: cannot dereference possibly-null status pointer 'p1'`, and a by-value
 `struct S s` parameter with two `_Owned _Nullable` fields reports no leak at
 scope exit (without the builtin the same function is `error: memory leak

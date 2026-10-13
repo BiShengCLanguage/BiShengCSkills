@@ -66,6 +66,13 @@ int main() {
 - `_Async` can modify member functions: `_Async void int::g(int* this);`
 - `constexpr` cannot modify `_Async` functions
 - No variable-length arrays in `_Async` functions
+- **`_Await` + owned/borrowed locals in the same body is not supported yet**
+  (BOR-023, 2026-09): if an `_Async` body holds any `_Owned` pointer or
+  `_Borrow` and contains `int a = _Await f();`, the compiler reports
+  `error: borrow checking of '_Await' expressions is not implemented yet`
+  (it used to assert). A body with only plain values awaits fine. Keep owned
+  data out of `_Async` functions or move it into a helper called around the
+  `_Await`
 
 ### 4.1 Where `_Await` CAN appear
 

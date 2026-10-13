@@ -72,8 +72,8 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 | E0118 | Memory leak (owned not freed) | Free, return, or transfer before scope ends |
 | E0119 | Field memory leak | Free _Owned struct fields before scope ends |
 | E0126 | Temporary variable memory leak | Capture return value of _Owned-returning function |
-| *(OWN-050)* | __forget requires an _Owned pointer argument | Pass an `_Owned` pointer; `_Borrow`/raw/non-pointer are rejected |
-| *(OWN-051)* | unsupported __forget argument | Use a variable or struct field; bind `arr[0]`/`*q`/casts to a local first |
+| *(OWN-050)* | __forget requires an _Owned pointer or a struct containing ownership | Pass an `_Owned` pointer or a struct with (nested) `_Owned` fields; `_Borrow`/raw/`_Nonnull`/non-pointer/plain struct are rejected |
+| *(OWN-051)* | __forget requires a trackable expression as argument | Variable, field access, array element or deref chain only (parens/implicit casts ok); bind comma/ternary/explicit-cast values to a local first |
 
 ### Borrow (BSC-E02xx)
 
@@ -86,6 +86,8 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 | E0207 | Cannot return reference to local variable | Return by value or use `_Owned` heap allocation |
 | E0208 | Value does not live long enough | Ensure borrowed value outlives the borrow |
 | *(BOR-014)* | cannot take ownership of a borrowed value | Since 2026-09 also fires for array **parameters** with owned elements (note: `array parameter 'a' is adjusted to a '_Borrow _ArrayElem' pointer; its elements are borrowed and cannot be moved out`) — `safe_swap` or pass `T *_Owned _ArrayElem` |
+| *(BOR-022)* | expression is not assignable / cannot be mutably borrowed / cannot be mutably reborrowed because it is behind an immutable borrow | Anything reached through `&_Const` is read-only, even an inner `int *_Borrow`; take `&_Mut` of the outer object instead (`bsc-borrowing` §13) |
+| *(BOR-023)* | '...' is not implemented yet | Currently `borrow checking of '_Await' expressions` — `int a = _Await f();` with owned/borrowed values in an `_Async` body; restructure or drop the borrow checking there |
 | *(BOR-021)* | lifetime may not live long enough | Assignment between (derefs of) borrow parameters when one is multi-level (`T *_Borrow *_Borrow`) — copy through a local value or restructure; see `bsc-borrowing` §9 |
 | *(out of scope)* | function return type cannot contain multiple borrow regions | Return types may not be multi-level borrows; return the inner `T *_Borrow` instead |
 
@@ -99,6 +101,14 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 | E0304 | Forbidden cast in safe zone | Wrap cast in `_Unsafe { }` or pass correct type |
 | E0307 | Forbidden operation in _Safe function | Move operation to `_Unsafe` block |
 | E0308 | Mutable global variable in safe zone | Make global `const` or define outside safe zone |
+
+### Initialization (INIT-xxx, no BSC-Exxxx range)
+
+| Code | Message | Fix |
+|------|---------|-----|
+| *(INIT-033)* | __attribute__((ensure_init)) parameter 'h' points to incomplete type 'struct Handle' in a function definition | Define the struct before the function definition (declarations may stay forward) |
+| *(INIT-034)* | __attribute__((ensure_init_if_ret)) argument 2 is not representable in return type '_Bool', so no return can ever satisfy the contract | Pick an `arg` the return type can hold (0/1 for `_Bool`, in range for `char`) |
+| *(attr)* | 'ensure_init' attribute only applies to pointer parameters to a non-void type | Contracts can't target `void *`; use a concrete pointee |
 
 ### Nullability (BSC-E04xx)
 
@@ -125,9 +135,10 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 > `..._assign_owned`) — see `bsc-ownership` §9.
 
 > **New in 2026-08**: two analyzer-hint builtins, both `_Unsafe`-only —
-> `__assume_null` and `__forget`. `__forget` takes a variable or struct field
-> access; since 2026-09 `__assume_null` takes any *trackable* expression
-> (including deref chains and whole structs). These have no `BSC-Exxxx` code
+> `__assume_null` and `__forget`. Since 2026-09 both take any *trackable*
+> expression (deref chains and whole structs; `__forget` also array elements
+> inside a qualifying loop), and both reject a path through a `_Borrow`
+> deref when ownership is involved (`cannot take ownership of a borrowed value`). These have no `BSC-Exxxx` code
 > assigned yet; the rows above cite the upstream catalog ids. Calling either
 > in a safe zone reports `<name> is forbidden in the safe zone` (E0301). See
 > `bsc-nullability` §9 and `bsc-ownership` §5.
@@ -136,8 +147,9 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 > keeps `clang/docs/BSC/bsc-errors.md` in the source tree; it is produced from
 > the `BSCDiag<"FEATURE", N>` metadata on each diagnostic in
 > `clang/include/clang/Basic/BSC/*.td` by `ninja bsc-errors-md`, landing at
-> `<build>/tools/clang/docs/BSC/bsc-errors.md` (130 errors, 3 warnings, 31
-> notes at the 2026-09 tip). The generator rejects duplicate codes, so the
+> `<build>/tools/clang/docs/BSC/bsc-errors.md` (134 errors, 3 warnings at the
+> 2026-09-30 tip: OWN 47, BOR 22, INIT 33, MISC 8, SZONE 12, NONNULL 3,
+> NULLABLE 9). The generator rejects duplicate codes, so the
 > earlier OWN-047 double assignment is gone: `err_ownership_array_elem_transfer_forbidden`
 > is now **OWN-052** (OWN-047 stays `err_owned_member_access_in_return`).
 > Diagnostics marked `BSCOutOfScope` (traits, async, generics, constexpr,
