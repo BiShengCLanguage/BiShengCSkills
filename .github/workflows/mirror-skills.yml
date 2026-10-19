@@ -1,0 +1,96 @@
+name: Mirror BiSheng C skills
+
+# Daily mirror of the skills repo from gitcode -> this repo (same pattern as
+# mirror-compiler.yml in BiShengCLanguage/BiShengCLanguage, minus the pack cache —
+# this repo is small enough to fetch in full every run).
+#
+#   source : https://gitcode.com/bisheng_c_language_dep/BiShengCSkills.git  (source of truth)
+#   target : this repo, branch master (force-pushed: gitcode tip + 1 overlay commit)
+#
+# SCHEDULING: GitHub only fires `schedule:` for workflow files on the DEFAULT branch
+# (master), but master itself is the mirror target. So the overlay commit re-adds
+# every file under .github/workflows/ from the previous master on top of the gitcode
+# tip — the workflow carries itself forward across force-pushes.
+#
+# PUSH AUTH: the push touches workflow files, which GITHUB_TOKEN is forbidden to
+# push — so it goes over SSH with the MIRROR_SSH_KEY secret (a dedicated user key,
+# revocable at github.com/settings/keys).
+#
+# NOTE: anything merged directly to GitHub master outside .github/workflows/ is
+# overwritten by the next mirror run — land changes on gitcode instead.
+
+on:
+  schedule:
+    - cron: "30 19 * * *"   # 03:30 Beijing, after the compiler mirror's 03:00 slot
+  workflow_dispatch: {}
+
+permissions:
+  contents: read           # pushes go over SSH, not the token
+
+concurrency:
+  group: mirror-skills
+  cancel-in-progress: false
+
+env:
+  SRC: https://gitcode.com/bisheng_c_language_dep/BiShengCSkills.git
+  BRANCH: master
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout master (carries the workflow files to overlay)
+        uses: actions/checkout@v4
+
+      - name: Fetch gitcode tip and current GitHub tip
+        run: |
+          git init --bare mirror.git
+          git --git-dir=mirror.git fetch --no-tags "$SRC" "+refs/heads/$BRANCH:refs/heads/src"
+          echo "[INFO] gitcode tip: $(git --git-dir=mirror.git rev-parse refs/heads/src)"
+          git --git-dir=mirror.git fetch --no-tags \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
+            "+refs/heads/$BRANCH:refs/heads/dst" || echo "[WARN] no existing target branch"
+
+      - name: Set up SSH push key
+        env:
+          KEY: ${{ secrets.MIRROR_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/mirror_key
+          chmod 600 ~/.ssh/mirror_key
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Build overlay commit (workflows on top of gitcode tip) and push
+        env:
+          GIT_AUTHOR_NAME: BiSheng C Team
+          GIT_AUTHOR_EMAIL: qq1105258717@gmail.com
+          GIT_COMMITTER_NAME: BiSheng C Team
+          GIT_COMMITTER_EMAIL: qq1105258717@gmail.com
+        run: |
+          set -euo pipefail
+          WORKSPACE="$PWD"
+          export GIT_DIR="$PWD/mirror.git"
+          BASE=$(git rev-parse refs/heads/src)
+          export GIT_INDEX_FILE=$(mktemp -u)   # name only; git creates a fresh index
+          git read-tree "$BASE"
+          while IFS= read -r f; do
+            rel=${f#"$WORKSPACE/"}
+            blob=$(git hash-object -w "$f")
+            git update-index --add --cacheinfo 100644,"$blob","$rel"
+          done < <(find "$WORKSPACE/.github/workflows" -type f)
+          TREE=$(git write-tree)
+          rm -f "$GIT_INDEX_FILE"; unset GIT_INDEX_FILE
+          DST=$(git rev-parse --verify --quiet refs/heads/dst || true)
+          if [ -n "$DST" ] && [ "$(git rev-parse "$DST^{tree}")" = "$TREE" ]; then
+            echo "[INFO] target already up to date (same tree) — nothing to push"
+          else
+            OUT=$(git commit-tree "$TREE" -p "$BASE" -m "ci: carry pipeline workflows across the gitcode mirror
+
+          Overlay applied by the GitHub mirror on top of the gitcode tip: the files
+          under .github/workflows/ must live on the default branch for GitHub to
+          run their schedules, so each mirror run re-adds them.")
+            echo "[INFO] pushing: $OUT"
+            GIT_SSH_COMMAND="ssh -i ~/.ssh/mirror_key -o IdentitiesOnly=yes" \
+              git push -f "git@github.com:${{ github.repository }}.git" "$OUT:refs/heads/$BRANCH"
+          fi
