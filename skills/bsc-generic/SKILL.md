@@ -91,7 +91,8 @@ int main() {
 ### Constant generic parameter types
 - Declaration: `int` and its modifiers (`long`, `short`, `unsigned`, `signed`) and their combinations, and `char`
 - Also supports typedef aliases of the above: `typedef unsigned long ulong;` then `struct S<ulong N> {...}`
-- Rejected (2026-09, `error: a non-type template parameter cannot have type 'X'`): `_Bool`, pointers (`int *P`, also via typedef), arrays (`int V[2]`), function types, enums, `float`. Use an `int` parameter instead
+- `_Bool`/`bool` (since 2026-10): `bool fn<bool N>(int *_Borrow p) { return N; }`, `struct S<_Bool N>`, called as `fn<true>(...)`, `struct S<false>`; usable in conditions and member functions of the generic struct
+- Rejected (`error: a non-type template parameter cannot have type 'X'`): pointers (`int *P`, also via typedef), arrays (`int V[2]`), function types, enums, `float`. Use an `int` parameter instead
 
 ### Constant generic argument types
 - Integer literals (`1`, `2`, etc.) — no parens needed

@@ -520,14 +520,26 @@ _Safe void test(void) {
 For an array `a` **whose type carries its length** (fixed-size arrays and
 VLAs), all of the following:
 
-1. Init: `for (T i = 0; ...)` — `T` an integer type, start at 0, step exactly
-   +1 (`i++`, `++i`, `i += 1`).
+1. Init: `for (T i = 0; ...)` **or** `for (i = 0; ...)` on an already
+   declared integer `i` (assignment form accepted since 2026-10) — start at 0,
+   step exactly +1 (`i++`, `++i`, `i += 1`; respellings with the same net
+   effect such as `i = i + 1`, `i -= -1`, `i = i - (-1)` also qualify).
 2. Condition: `i < N` where `N` is the array length (for a variable bound, `N`
-   must not be modified, address-taken, or borrowed in the function), and `T`'s
-   range must cover `N`.
-3. Body doesn't modify `i`, take its address, or mutably borrow it.
+   must not be modified, address-taken, or borrowed in the function), and the
+   loop variable's type must be able to hold `N` — this applies to the inner
+   loops of a multi-dimensional nest too (`for (unsigned char j = 0; j < 256;
+   j++)` over `a[i][j]` is `note: type of the loop variable is too small to
+   hold the loop bound`).
+3. The loop variable is never modified in the body, and is never
+   address-taken or mutably borrowed **anywhere in its lifetime** — not just
+   inside the body. `int *pi = &i;` *after* the loop, or `&_Mut i` before it,
+   still disqualifies the loop (`note: loop variable must not be modified or
+   have its address taken outside the increment`), because an alias could
+   advance the counter and skip elements.
 4. No early exit from the loop: no `break`, `return`, or `goto` out of it
-   (`continue` and inner-loop `break`/local `goto` are fine).
+   (`continue` and inner-loop `break`/local `goto` are fine). A `goto` **into**
+   the body from outside the loop also disqualifies it (the body must only be
+   entered through the header).
 5. The array is only accessed as `a[i]` (1-D), `a[i][j]` (multi-D — outer loop
    = first dimension, dimension order must match the declaration), or
    `a[i].field`.
@@ -536,7 +548,15 @@ Loop-end ownership must be **consistent across paths** — freeing only some
 indices (`if (i != 1) safe_free(...)`) is an error
 (``ownership state of array element `a` is inconsistent across paths in
 for-loop body``). A null-check skip is fine: null elements count as not owning,
-so `if (a[i] != nullptr) safe_free(...)` passes.
+so `if (a[i] != nullptr) safe_free(...)` passes. Assigning into `a[i]` after a
+*conditional* free (`if (i == 0) safe_free(...); a[i] = make();`) is
+`error: cannot assign to 'a[]' because it still holds an _Owned value; move or
+free it first` — the element may still own on the other path.
+
+`(*w).arr[i]` and `w->arr[i]` are the same place (since 2026-10): a qualifying
+loop over either spelling moves the field array's elements. `_Generic(c,
+int: p2, default: p)` as the initializer of an `_Owned` variable moves only
+the selected arm (`p` stays owned and must still be freed).
 
 **Flexible array members never qualify** (since 2026-09). For
 `struct S { int len; int *_Owned arr[]; };` the array type has no length, so

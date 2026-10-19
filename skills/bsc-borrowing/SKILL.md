@@ -179,6 +179,8 @@ rather than *borrow variable*, because `*q`, `s.p` and the like are borrows too.
 - Comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) is allowed between same-typed borrows. Top-level `const`/`volatile`/`restrict` on the pointee are ignored when comparing — `int *_Borrow` and `const int *_Borrow` are comparable
 - `sizeof(T *_Borrow) == sizeof(T *)` and the same for `_Alignof`. `_Borrow _ArrayElem` has the same size/alignment as `T *`
 - String literals auto-borrow to `const char *_Borrow` when passed to a `const char *_Borrow` parameter (compiler inserts `&_Const *`)
+- **Static members of an `_Owned struct`** (`static int st;`, `-fbsc-experimental`) are one place regardless of the spelling: `&_Mut a->st`, `&_Mut b->st` and `&_Mut W::st` all borrow the same `st`, so holding two of them is `cannot borrow 'st' as mutable more than once at a time` (since 2026-10; previously crashed). Enumerators (`w->K`) and method designators (`w->f`) reached through a member expression have no place and are fine
+- **Assignment evaluation order** (since 2026-10): the RHS is evaluated, and its temporary borrows end, *before* the destination is borrowed — `(&_Mut s)->x += (&_Mut s)->x;` and `p->x = p->x + 1` with `p` spelled `(&_Mut s)` on both sides compile. A borrow that is **still live after** the assignment conflicts as usual: `struct S *_Borrow p = &_Mut s; (&_Mut s)->x = p->x; use(p);` is `cannot borrow 's' as mutable more than once at a time`
 
 ## 9. Function Signatures
 

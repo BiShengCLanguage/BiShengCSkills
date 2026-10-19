@@ -221,6 +221,38 @@ _Safe void test(void) {
 }
 ```
 
+### Compound literals (since 2026-10)
+
+A compound literal is checked as its own object, so it cannot launder a
+nullable value into a `_Nonnull` slot (verified):
+
+```c
+struct T { int *_Nonnull p; };
+struct U { int n; struct T t; };
+
+_Safe void f(int *_Nullable q, int *_Nonnull r) {
+    (void)((struct U){.n = 1});       // error: cannot implicitly initialize
+                                      //   'struct U' because it contains
+                                      //   '_Nonnull' pointer (omitted field = NULL)
+    int *_Nonnull x = (int *_Nonnull){q};   // error: cannot assign a
+                                             //   possibly-null status pointer
+    return ((struct U){.n = 1, .t = {.p = r}}).t.p;  // ok
+}
+```
+
+- Omitted `_Nonnull` fields/elements (`(struct U){.n = 1}`, `(int *_Nonnull[2]){q}[1]`,
+  `(struct SArr){0}`) are implicit NULLs → the "cannot implicitly initialize"
+  error, even when the literal is unused or only a sub-member is read.
+- The construction is checked **independently of the receiver**: `int *_Nullable
+  p = (int *_Nonnull){nullptr};` is still an error. Direct same-type init
+  (`struct U u = (struct U){.n = 1};`) reports only the literal's error, not a
+  second one for `u`.
+- Inside functions these checks follow the zone/mode rules (safe zone by
+  default, everywhere with `-nullability-check=all`). **File-scope** compound
+  literals (`struct U g = (struct U){.n = 1};`) are checked only under
+  `-nullability-check=all`; `sizeof((struct U){.n = 1})` is unevaluated and
+  never checked.
+
 ## 9. `__assume_null`
 
 `__assume_null(p)` is a builtin that asserts a `_Nullable` pointer is null at

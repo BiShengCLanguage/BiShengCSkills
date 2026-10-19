@@ -148,7 +148,7 @@ For LLM/IDE integration, the `errors/ai/` directory contains:
 > the `BSCDiag<"FEATURE", N>` metadata on each diagnostic in
 > `clang/include/clang/Basic/BSC/*.td` by `ninja bsc-errors-md`, landing at
 > `<build>/tools/clang/docs/BSC/bsc-errors.md` (134 errors, 3 warnings at the
-> 2026-09-30 tip: OWN 47, BOR 22, INIT 33, MISC 8, SZONE 12, NONNULL 3,
+> 2026-10-13 tip, unchanged since 2026-09-30: OWN 47, BOR 22, INIT 33, MISC 8, SZONE 12, NONNULL 3,
 > NULLABLE 9). The generator rejects duplicate codes, so the
 > earlier OWN-047 double assignment is gone: `err_ownership_array_elem_transfer_forbidden`
 > is now **OWN-052** (OWN-047 stays `err_owned_member_access_in_return`).

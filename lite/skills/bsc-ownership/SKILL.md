@@ -108,7 +108,7 @@ Prefer `nullptr` in BSC code (`NULL` is also accepted since 2026-09).
 - **No `[]`, no arithmetic on `_Owned`** — for a heap array you want to index, use `T *_Owned _ArrayElem` with `safe_malloc_array` / `safe_free_array` (the array variants are the only way to legally subscript an owning pointer)
 - **`_Owned struct` definitions must be at file scope** — not inside a function body
 
-**Local** arrays of `_Owned` elements (`int *_Owned arr[10]`) are allowed, but the whole array shares one ownership state: transfer element ownership only in a full-range `for (int i = 0; i < N; i++)` loop that treats every element the same, or swap elements out with `safe_swap`. See the full `bsc-ownership` Skill §9.
+**Local** arrays of `_Owned` elements (`int *_Owned arr[10]`) are allowed, but the whole array shares one ownership state: transfer element ownership only in a full-range `for (int i = 0; i < N; i++)` (or `for (i = 0; ...)`) loop that treats every element the same and whose counter is never address-taken or mutably borrowed anywhere, or swap elements out with `safe_swap`. See the full `bsc-ownership` Skill §9.
 
 Use `_Owned` only on local variables, function parameters, return types, and struct fields.
 
