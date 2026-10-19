@@ -1,0 +1,57 @@
+name: lint-skills
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  lint:
+    name: Structural lint (frontmatter, line limits, corpus)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sparse checkout of the compiler repo: only clang/test/BSC is needed to
+      # verify that every corpus reference_test path really exists.
+      - uses: actions/checkout@v4
+        with:
+          repository: BiShengCLanguage/BiShengCLanguage
+          path: main-repo
+          sparse-checkout: clang/test/BSC
+          filter: blob:none
+
+      - name: Run lint
+        run: BSC_MAIN_REPO=main-repo evals/lint.sh
+
+  load-test:
+    name: Plugin load test (real Claude Code loader)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      # Load the repo through the actual plugin loader. This parses
+      # plugin.json, marketplace.json, hooks.json and every SKILL.md
+      # frontmatter for real — no API key required.
+      - name: Install plugin from workspace
+        run: |
+          claude plugin marketplace add "$GITHUB_WORKSPACE"
+          claude plugin install bisheng-c-skills
+
+      - name: Component inventory matches the repo
+        run: |
+          set -eu
+          claude plugin details bisheng-c-skills | tee details.txt
+          want_skills=$(ls -d skills/*/ | wc -l | tr -d ' ')
+          want_agents=$(ls agents/*.md | wc -l | tr -d ' ')
+          grep -q "Skills ($want_skills)" details.txt \
+            || { echo "::error::loader did not discover all $want_skills skills"; exit 1; }
+          grep -q "Agents ($want_agents)" details.txt \
+            || { echo "::error::loader did not discover all $want_agents agents"; exit 1; }

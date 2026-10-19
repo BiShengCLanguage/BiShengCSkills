@@ -1,0 +1,79 @@
+name: eval-regression
+
+# Full bare-vs-skill eval sweep over evals/corpus.json.
+# Manual for now; flip on the schedule once the compiler-acquisition question
+# below is settled and cost per sweep is known.
+on:
+  workflow_dispatch:
+    inputs:
+      ids:
+        description: "Comma-separated eval ids (empty = full corpus)"
+        required: false
+        default: ""
+      n:
+        description: "Reps per eval per arm"
+        required: false
+        default: "3"
+      model:
+        description: "Model for generation"
+        required: false
+        default: "sonnet"
+  # schedule:
+  #   - cron: "0 2 * * 1"   # weekly, Monday 02:00 UTC — enable after GATE 4
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: BiShengCLanguage/BiShengCLanguage
+          path: main-repo
+          sparse-checkout: clang/test/BSC
+          filter: blob:none
+
+      # Prebuilt toolchain from the compiler repo's daily release
+      # (build-compiler-release.yml publishes rolling prerelease `bsc-nightly`
+      # with asset bsc-clang-linux-x64.tar.gz).
+      - name: Download prebuilt BSC toolchain
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release download bsc-nightly \
+                 --repo BiShengCLanguage/BiShengCLanguage \
+                 -p 'bsc-clang-linux-x64.tar.gz'; then
+            echo "::error::No bsc-nightly release found on BiShengCLanguage/BiShengCLanguage — run build-compiler-release.yml there first."
+            exit 1
+          fi
+          tar xzf bsc-clang-linux-x64.tar.gz
+          echo "BSC_CLANG=$GITHUB_WORKSPACE/bsc-install/bin/clang" >> "$GITHUB_ENV"
+          echo "BSC_LIBCBS=$GITHUB_WORKSPACE/bsc-install/libcbs-src" >> "$GITHUB_ENV"
+          "$GITHUB_WORKSPACE/bsc-install/bin/clang" --version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run evals
+        env:
+          # Repo/org secret; generation calls the Anthropic API.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_MODEL: ${{ inputs.model }}
+        run: |
+          args=""
+          [ -n "${{ inputs.ids }}" ] && args="--ids ${{ inputs.ids }}"
+          evals/run.sh $args --n "${{ inputs.n }}" --out results-out
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: |
+            results-out/results.json
+            results-out/results.md
+            results-out/runs.jsonl

@@ -1,0 +1,270 @@
+{
+  "version": 1,
+  "notes": "Each prompt is a task a real user would give an AI assistant. reference_test points at the clang/test/BSC Positive test (in the BiShengCLanguage compiler repo) that grounds the feature under test; prompts never copy the test's content. judge=compile means the generated .cbs must be accepted by the BSC compiler (evals/judge.sh). expected_skills lists which skills SHOULD auto-trigger for the prompt (used for the skill-selection metric; a run scores a hit when at least one expected skill fires).",
+  "evals": [
+    {
+      "id": "ownership-ffi-raw-roundtrip-01",
+      "feature": "Ownership",
+      "prompt": "我有个 C 库,它返回 malloc 出来的裸指针。我想在毕昇C这边把这个裸指针包成带所有权的指针来管理,用完之后再转回裸指针交还给 free。帮我写个能编译的小例子,两个方向的转换都要有。",
+      "reference_test": "clang/test/BSC/Positive/Ownership/owned_raw_transfer_builtins/owned_raw_transfer_builtins.cbs",
+      "expected_skills": ["bsc-ownership"],
+      "judge": "compile"
+    },
+    {
+      "id": "ownership-linked-list-safezone-02",
+      "feature": "Ownership",
+      "prompt": "用毕昇C写一个单链表:节点内存用带所有权的指针管理,next 允许为空,插入新节点时所有权要转移进链表,释放时不许直接用裸指针 free。尽量把逻辑放在安全区里。",
+      "reference_test": "clang/test/BSC/Positive/Ownership/self_referential_owned_pointer/self_referential_owned_pointer.cbs",
+      "expected_skills": ["bsc-ownership", "bsc-safe-zone"],
+      "judge": "compile"
+    },
+    {
+      "id": "ownership-owned-array-03",
+      "feature": "Ownership",
+      "prompt": "毕昇C里想安全地管理一块动态 int 数组:分配、写几个值、再释放,全程不要出现裸的 malloc/free 调用。数组版的安全分配释放该怎么写?",
+      "reference_test": "clang/test/BSC/Positive/Ownership/arrayelem/arrayelem_safe_malloc_free_api.cbs",
+      "expected_skills": ["bsc-ownership"],
+      "judge": "compile"
+    },
+    {
+      "id": "ownership-list-build-traverse-04",
+      "feature": "Ownership",
+      "prompt": "写个毕昇C程序:先构建一个三个节点的链表,再从头遍历打印每个节点的值。节点的 next 得能表达\"后面没有节点了\"这种情况,程序结束前把内存都归还。",
+      "reference_test": "clang/test/BSC/Positive/Ownership/borrow_check_rules/linked_list_type/linked_list_type.cbs",
+      "expected_skills": ["bsc-ownership", "bsc-nullability"],
+      "judge": "compile"
+    },
+    {
+      "id": "ownership-alloc-wrapper-05",
+      "feature": "Ownership",
+      "prompt": "帮我在毕昇C里封装一个 my_alloc 函数:内部还是调 malloc,但对外返回的是带所有权的指针。再演示调用方拿到返回值、赋给局部变量、最后正常释放的完整流程。",
+      "reference_test": "clang/test/BSC/Positive/Ownership/RuleCheck/Maple/malloc/malloc.cbs",
+      "expected_skills": ["bsc-ownership"],
+      "judge": "compile"
+    },
+    {
+      "id": "trait-minimal-impl-01",
+      "feature": "Trait",
+      "prompt": "毕昇C的 trait 是怎么用的?给我一个最小可编译示例:定义一个带 foo 方法的 trait,给 int 类型实现它,然后写个函数接收这个 trait 的指针并调用 foo。",
+      "reference_test": "clang/test/BSC/Positive/Trait/r1/definition_3/definition_3.cbs",
+      "expected_skills": ["bsc-trait"],
+      "judge": "compile"
+    },
+    {
+      "id": "trait-dynamic-dispatch-02",
+      "feature": "Trait",
+      "prompt": "我想在毕昇C里做运行时多态:两个不同的结构体实现同一个接口,通过接口指针调用时各走各的实现。写一个完整的例子,main 里两种类型都调一遍。",
+      "reference_test": "clang/test/BSC/Positive/Trait/r3/call_func_by_trait_pointer/call_func_by_trait_pointer.cbs",
+      "expected_skills": ["bsc-trait"],
+      "judge": "compile"
+    },
+    {
+      "id": "trait-member-field-03",
+      "feature": "Trait",
+      "prompt": "毕昇C能把\"回调对象\"存在结构体字段里吗?比如一个 Logger 结构体,持有一个实现了某个格式化 trait 的成员,构造好之后通过这个字段调方法。给个能编译的示例。",
+      "reference_test": "clang/test/BSC/Positive/Trait/r3/trait_in_struct/trait_in_struct.cbs",
+      "expected_skills": ["bsc-trait"],
+      "judge": "compile"
+    },
+    {
+      "id": "trait-generic-param-return-04",
+      "feature": "Trait",
+      "prompt": "写一个毕昇C泛型函数,它的参数和返回值都是 trait 指针类型,演示怎么把具体类型的对象传进去、再以 trait 指针的形式返回给调用方。",
+      "reference_test": "clang/test/BSC/Positive/Trait/r3/trait_as_param_and_return/trait_as_param_and_return.cbs",
+      "expected_skills": ["bsc-trait", "bsc-generic"],
+      "judge": "compile"
+    },
+    {
+      "id": "generic-multi-type-params-01",
+      "feature": "Generic",
+      "prompt": "毕昇C泛型函数怎么带多个类型参数?写一个 pick 函数,三个类型参数,调用的时候显式写出类型实参,int 和 float 混着实例化几次。",
+      "reference_test": "clang/test/BSC/Positive/Generic/StructAndFunction/multi_type_params/multi_type_params.cbs",
+      "expected_skills": ["bsc-generic"],
+      "judge": "compile"
+    },
+    {
+      "id": "generic-member-method-02",
+      "feature": "Generic",
+      "prompt": "想给毕昇C的泛型结构体加成员函数:定义一个 Box<T>,给它写个方法对里面存的 T 做点运算,然后在 main 里像 b.foo(10) 这样调用。该怎么写?",
+      "reference_test": "clang/test/BSC/Positive/Generic/GenericTypeMethods/member_func_instance_call/member_func_instance_call.cbs",
+      "expected_skills": ["bsc-generic", "bsc-member-function"],
+      "judge": "compile"
+    },
+    {
+      "id": "generic-constant-param-03",
+      "feature": "Generic",
+      "prompt": "毕昇C支持像 Rust 的 const generics 那样把整数当泛型参数用吗?写个函数,常量泛型参数 N 用来在函数体里声明定长数组 T data[N],调用时 N 传 5。",
+      "reference_test": "clang/test/BSC/Positive/Generic/Constant/Constant_func_1/Constant_func_1.cbs",
+      "expected_skills": ["bsc-generic"],
+      "judge": "compile"
+    },
+    {
+      "id": "generic-conditional-alias-04",
+      "feature": "Generic",
+      "prompt": "用毕昇C的条件类型别名写个示例:根据一个常量泛型参数在两个类型里二选一,再用 _Static_assert 在编译期验证选出来的类型是对的。",
+      "reference_test": "clang/test/BSC/Positive/Generic/Typealias/conditional/conditional.cbs",
+      "expected_skills": ["bsc-generic", "bsc-constexpr"],
+      "judge": "compile"
+    },
+    {
+      "id": "safezone-safe-free-fn-01",
+      "feature": "SafeZone",
+      "prompt": "我要写一个毕昇C的安全函数,专门负责释放一个带所有权的指针。但 free 这种操作安全区里不让做,听说要开 unsafe 块?写个例子,把指针为空和非空两个分支都处理掉。",
+      "reference_test": "clang/test/BSC/Positive/SafeZone/safe_fun_and_comp_stmt/safe_fun_and_comp_stmt.cbs",
+      "expected_skills": ["bsc-safe-zone", "bsc-ownership"],
+      "judge": "compile"
+    },
+    {
+      "id": "safezone-nested-blocks-02",
+      "feature": "SafeZone",
+      "prompt": "毕昇C的安全块和非安全块能互相嵌套吗?写个例子:一个安全函数里,把循环和指针解引用放进 _Unsafe 块,块里面再开一层 _Safe 块回到安全约束。",
+      "reference_test": "clang/test/BSC/Positive/SafeZone/safe_stmt/safe_stmt.cbs",
+      "expected_skills": ["bsc-safe-zone"],
+      "judge": "compile"
+    },
+    {
+      "id": "safezone-generic-factory-03",
+      "feature": "SafeZone",
+      "prompt": "模仿 Rust 的 Vec::new,在毕昇C里给一个泛型的 owned struct 写一个安全的静态工厂方法 new():方法本身标 _Safe,内部初始化裸字段的部分用 _Unsafe 块包起来,再给类型配一个析构函数。",
+      "reference_test": "clang/test/BSC/Positive/SafeZone/safe_owned_struct/safe_owned_struct.cbs",
+      "expected_skills": ["bsc-safe-zone", "bsc-ownership"],
+      "judge": "compile"
+    },
+    {
+      "id": "safezone-funcptr-null-04",
+      "feature": "SafeZone",
+      "prompt": "在毕昇C的安全函数里调函数指针有什么讲究?写个例子:一个标了非空的函数指针直接调用,另一个可空的先判空再调用,要能过编译。",
+      "reference_test": "clang/test/BSC/Positive/SafeZone/safe_deref_funcptr/safe_deref_funcptr.cbs",
+      "expected_skills": ["bsc-safe-zone", "bsc-nullability"],
+      "judge": "compile"
+    },
+    {
+      "id": "nullability-check-then-use-01",
+      "feature": "NullabilityCheck",
+      "prompt": "毕昇C的空指针检查老是拦我。我有个既带所有权又可空的指针,想判空之后再解引用,还要把它传给一个参数要求非空的函数。这套流程正确的写法是什么?给个完整示例。",
+      "reference_test": "clang/test/BSC/Positive/NullabilityCheck/null_pointer_check/null_pointer_check.cbs",
+      "expected_skills": ["bsc-nullability"],
+      "judge": "compile"
+    },
+    {
+      "id": "nullability-struct-members-02",
+      "feature": "NullabilityCheck",
+      "prompt": "结构体里有的指针字段允许为空、有的不允许,毕昇C里怎么声明这两种?写个例子把两种字段都初始化好,然后安全地使用它们。",
+      "reference_test": "clang/test/BSC/Positive/NullabilityCheck/init_nullptr.cbs",
+      "expected_skills": ["bsc-nullability", "bsc-ownership"],
+      "judge": "compile"
+    },
+    {
+      "id": "nullability-implicit-cond-03",
+      "feature": "NullabilityCheck",
+      "prompt": "毕昇C里直接写 if (p) 这种隐式判空,编译器能认出 p 在分支里非空吗?用可空的 owned 指针写两个例子:一个 if 判空,一个用三目运算符,判完再使用指针。",
+      "reference_test": "clang/test/BSC/Positive/NullabilityCheck/owned_ptr_as_condition.cbs",
+      "expected_skills": ["bsc-nullability"],
+      "judge": "compile"
+    },
+    {
+      "id": "nullability-safeexpr-narrow-04",
+      "feature": "NullabilityCheck",
+      "prompt": "我在安全表达式包装里做判空,编译器还能跟踪空值状态吗?写例子:分别用 _Safe(p) 当条件、和 _Safe(p) == nullptr 比较这两种方式判空,之后使用指针,要能过编译。",
+      "reference_test": "clang/test/BSC/Positive/NullabilityCheck/safeexpr_null_narrowing.cbs",
+      "expected_skills": ["bsc-nullability", "bsc-safe-zone"],
+      "judge": "compile"
+    },
+    {
+      "id": "ownedstruct-raii-branches-01",
+      "feature": "OwnedStruct",
+      "prompt": "定义一个带析构函数的毕昇C owned struct,然后在 if 分支、for 循环这些不同的控制流里创建局部实例,验证离开作用域时会自动析构。安全区和非安全区里都要有用例。",
+      "reference_test": "clang/test/BSC/Positive/OwnedStruct/safe_wrapped_owned_struct_local.cbs",
+      "expected_skills": ["bsc-ownership", "bsc-safe-zone"],
+      "judge": "compile"
+    },
+    {
+      "id": "ownedstruct-encapsulation-02",
+      "feature": "OwnedStruct",
+      "prompt": "毕昇C的 owned struct 支持成员可见性控制吗?帮我写一个类型:内部字段藏起来不让外面碰,私有方法只被公开方法调用,外部代码只通过公开接口用它。",
+      "reference_test": "clang/test/BSC/Positive/OwnedStruct/Access/owned-struct-private-member-access.cbs",
+      "expected_skills": ["bsc-ownership"],
+      "judge": "compile"
+    },
+    {
+      "id": "ownedstruct-nested-dtor-03",
+      "feature": "OwnedStruct",
+      "prompt": "如果一个 owned struct 的字段本身也是 owned struct,析构的时候会级联吗?写几个嵌套的类型:有的自定义析构函数、有的用默认的,展示外层析构会带动内层析构。",
+      "reference_test": "clang/test/BSC/Positive/OwnedStruct/Destructor/destructor1.cbs",
+      "expected_skills": ["bsc-ownership"],
+      "judge": "compile"
+    },
+    {
+      "id": "ownedstruct-methods-04",
+      "feature": "OwnedStruct",
+      "prompt": "给毕昇C的 owned struct 挂成员方法怎么写?写个类型带两个方法,其中一个内部通过 this 调另一个,main 里用点号语法调用。",
+      "reference_test": "clang/test/BSC/Positive/OwnedStruct/Access/owned-struct-field.cbs",
+      "expected_skills": ["bsc-ownership", "bsc-member-function"],
+      "judge": "compile"
+    },
+    {
+      "id": "coroutine-nested-await-01",
+      "feature": "Coroutine",
+      "prompt": "毕昇C的异步函数里,能把一个 await 出来的结果直接当另一个异步调用的参数吗?写个嵌套 await 的例子,能编译就行。",
+      "reference_test": "clang/test/BSC/Positive/Coroutine/AwaitExpr/await-expr-nest-await/await-expr-nest-await.cbs",
+      "expected_skills": ["bsc-coroutine"],
+      "judge": "compile"
+    },
+    {
+      "id": "coroutine-manual-future-02",
+      "feature": "Coroutine",
+      "prompt": "不用语法糖,我想手写实现毕昇C的 Future:自定义一个类型,自己实现 poll 和 free,然后在异步函数里 await 它。给个完整示例。",
+      "reference_test": "clang/test/BSC/Positive/Coroutine/AwaitExpr/await-expr-num/await-expr-num.cbs",
+      "expected_skills": ["bsc-coroutine", "bsc-trait"],
+      "judge": "compile"
+    },
+    {
+      "id": "coroutine-recursive-async-03",
+      "feature": "Coroutine",
+      "prompt": "毕昇C的异步函数可以递归地 await 自己吗?写一个异步递归的例子,比如倒着数数或者算阶乘,别忘了递归终止条件。",
+      "reference_test": "clang/test/BSC/Positive/Coroutine/Other/RecursiveCall/recursive-async-call/recursive-async-call.cbs",
+      "expected_skills": ["bsc-coroutine"],
+      "judge": "compile"
+    },
+    {
+      "id": "coroutine-await-in-loop-04",
+      "feature": "Coroutine",
+      "prompt": "写一个毕昇C的异步函数,在 for 循环里每一轮 await 一个异步操作,把结果累加起来最后返回。",
+      "reference_test": "clang/test/BSC/Positive/Coroutine/Treetransform/Other/Loop/for-loop/for-loop.cbs",
+      "expected_skills": ["bsc-coroutine"],
+      "judge": "compile"
+    },
+    {
+      "id": "method-struct-receivers-01",
+      "feature": "Method",
+      "prompt": "毕昇C怎么给普通 struct 加方法?写一个 Point 结构体,方法里既要有指针接收者的也要有值接收者的,比如 getX、setX,然后在 main 里用点号调用。",
+      "reference_test": "clang/test/BSC/Positive/Method/Struct/struct_instance_function/struct_instance_function.cbs",
+      "expected_skills": ["bsc-member-function"],
+      "judge": "compile"
+    },
+    {
+      "id": "method-static-02",
+      "feature": "Method",
+      "prompt": "毕昇C的静态方法怎么定义、怎么调?给一个 struct 写个不带接收者的工具方法,然后用类型名::方法名的形式调用它。",
+      "reference_test": "clang/test/BSC/Positive/Method/Struct/struct_static_function_call/struct_static_function_call.cbs",
+      "expected_skills": ["bsc-member-function"],
+      "judge": "compile"
+    },
+    {
+      "id": "method-on-int-03",
+      "feature": "Method",
+      "prompt": "听说毕昇C能给 int 这种内置类型加方法?写个例子:给 int 定义一个 increase 方法让变量自增,然后 x.increase() 这样调用。",
+      "reference_test": "clang/test/BSC/Positive/Method/BuiltInType/int_instance_function/int_instance_function.cbs",
+      "expected_skills": ["bsc-member-function"],
+      "judge": "compile"
+    },
+    {
+      "id": "method-this-keyword-04",
+      "feature": "Method",
+      "prompt": "毕昇C的 This 关键字都能用在哪些类型上?分别给 typedef 过的 struct、原生 struct、int、还有泛型 struct 定义方法,接收者类型都用 This 来写,凑成一个能编译的完整示例。",
+      "reference_test": "clang/test/BSC/Positive/Method/This/use_This_as_BSCMethod_parameter/use_This_as_BSCMethod_parameter.cbs",
+      "expected_skills": ["bsc-member-function", "bsc-generic"],
+      "judge": "compile"
+    }
+  ]
+}
